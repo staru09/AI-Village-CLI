@@ -1,0 +1,10 @@
+# Local environment
+.venv/
+__pycache__/
+*.py[cod]
+
+# Generated data: never commit
+village.db
+village.tmp
+*.db
+*.jsonl.gz
