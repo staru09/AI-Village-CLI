@@ -1,4 +1,4 @@
-from village_graph import extractor
+from village_graph.mentions import extractor
 
 agents = {'a': 'GPT-5', 'b': 'GPT-5.1', 'c': 'Fine-Tuned Leader', 'd': '[Temporary] Fine-tuned Leader',
           'e': 'o3', 'f': 'DeepSeek-V3.2', 'g': 'Claude Opus 4.8'}
@@ -22,11 +22,11 @@ assert m('I am GPT-5', 'a') == {}                                           # se
 # only after 30 min), Alpha @Gamma once (Gamma only speaks in another room), Beta names Alpha once.
 import sqlite3, tempfile
 from pathlib import Path
-import village_graph as v
+from village_graph import commands, db
 
-v.DB = Path(tempfile.mkdtemp()) / 'test.db'
-con = sqlite3.connect(v.DB)
-con.executescript(v.SCHEMA)
+db.DB = Path(tempfile.mkdtemp()) / 'test.db'
+con = sqlite3.connect(db.DB)
+con.executescript(db.SCHEMA)
 con.executemany('INSERT INTO nodes VALUES (?,?,?)', [('a', 'Alpha', 'm-a'), ('b', 'Beta', 'm-b'), ('c', 'Gamma', 'm-c')])
 msgs = [('1', 'a', 'general', '2026-09-01 10:00:00.000000', '@Beta hi'),
         ('2', 'b', 'general', '2026-09-01 10:01:00.000000', 'Alpha: yes'),
@@ -38,7 +38,7 @@ con.executemany('INSERT INTO messages VALUES (?,?,?,?,?)', msgs)
 con.executemany('INSERT INTO edges VALUES (?,?,?,?,?,?)', [(i, s, d, k, 'general', msgs[int(i) - 1][3]) for i, s, d, k in
                 [('1', 'a', 'b', 'addressed'), ('2', 'b', 'a', 'named'), ('3', 'a', 'b', 'addressed'), ('5', 'a', 'c', 'addressed')]])
 con.commit()
-q = lambda *args: v.query(v.parser().parse_args(args))['tables'][0][1]
+q = lambda *args: commands.query(commands.parser().parse_args(args))['tables'][0][1]
 
 assert q('replies') == [['Beta', 2, 1, '50%', 60], ['Gamma', 1, 0, '0%', None]]
 assert q('replies', 'beta') == [['Alpha', 2, 1, '50%', 60]]
@@ -48,9 +48,9 @@ assert sorted(ignored[:2]) == [['Alpha', 'Beta', 2, 1, '50%'], ['Alpha', 'Gamma'
 assert ignored[2] == ['Beta', 'Alpha', 1, 2, '200%']
 assert [r[3] for r in q('examples', 'alpha', 'beta')] == ['@Beta again', '@Beta hi']
 assert q('agents')[0] == ['Alpha', 'm-a', 3, 2, 3, 1, '2026-09-01 10:00', '2026-09-01 12:00']
-pair = v.query(v.parser().parse_args(['pair', 'alpha', 'beta']))['tables']
+pair = commands.query(commands.parser().parse_args(['pair', 'alpha', 'beta']))['tables']
 assert [r[3] for r in pair[-1][1]] == ['@Beta again', 'Alpha: yes', '@Beta hi']       # samples: both directions, newest first
-assert len(v.query(v.parser().parse_args(['pair', 'alpha', 'beta', '--samples', '0']))['tables']) == 2
-top = v.query(v.parser().parse_args(['top-pairs', '--samples', '2']))['tables'][-1][1]
+assert len(commands.query(commands.parser().parse_args(['pair', 'alpha', 'beta', '--samples', '0']))['tables']) == 2
+top = commands.query(commands.parser().parse_args(['top-pairs', '--samples', '2']))['tables'][-1][1]
 assert [r[3] for r in top] == ['@Beta again', 'Alpha: yes']   # top pair's messages, not the newest overall (@Gamma)
 print('ok')

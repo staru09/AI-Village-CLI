@@ -1,139 +1,6 @@
-#!/usr/bin/env python3
-"""Who-talks-to-whom graph for the AI Village dataset (stdlib only).
+import argparse, sqlite3, statistics, sys
 
-Edges come from chat text (there is no reply/recipient field):
-  addressed = A wrote "@<B's full name>", named = A wrote B's full name without "@".
-All humans are merged into one "Human" node; the "automated" nudger bot is dropped.
-
-  village-graph build [--days 7]      # 0 = full history
-  village-graph pair "Claude Opus 4.8" "DeepSeek-V3.2" [--by month]
-  village-graph neighbors "GPT-5.2"
-  village-graph top-pairs --since 2026-09-02
-  village-graph hubs --goal "hardest game"
-  village-graph agents | goals | ignored | replies [A] [--within 10] | examples A B
-  village-graph web [--port 8765]     # same commands, drawn as an interactive graph in the browser
-Filters on every query: --since/--until (UTC, until exclusive) --room --kind --goal --limit
-Each result also lists the newest messages behind its edges (--samples N, 0 = off).
-Data: $VILLAGE_DATA (dir with the .jsonl.gz files), else the HF cache ($HF_HUB_CACHE or ~/.cache/huggingface/hub).
-"""
-import argparse, contextlib, gzip, io, json, os, re, shlex, sqlite3, statistics, sys
-from datetime import datetime, timedelta
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
-from urllib.parse import parse_qs, urlparse
-
-HERE = Path(__file__).resolve().parent
-DB = HERE / 'village.db'
-HYPHENS = str.maketrans({'‐': '-', '‑': '-', '–': '-'})
-HANDLE = re.compile(r'(?<![\w.])@([\w.-]+)')
-NOT_HUMAN = {'automated', 'all', 'team', 'everyone', 'agents'}
-
-
-def extractor(agents, humans):
-    """agents: {id: name}; humans: lowercase handles. Returns mentions(text, src) -> {dst: kind}."""
-    # ponytail: exact full names only; short forms ("Opus", "Gemini") are ambiguous across versions and skipped.
-    lookup = {n.translate(HYPHENS).lower(): i for i, n in agents.items()}
-    alt = '|'.join(re.escape(n) for n in sorted(lookup, key=len, reverse=True))  # longest name wins
-    rx = re.compile(rf'(@)?(?<![\w./-])({alt})(?![\w-]|\.\d)', re.I)  # GPT-5 must not eat GPT-5.1
-
-    def mentions(text, src):
-        text, out = text.translate(HYPHENS), {}
-        for m in rx.finditer(text):
-            dst = lookup[m[2].lower()]
-            if dst != src and out.get(dst) != 'addressed':
-                out[dst] = 'addressed' if m[1] else 'named'
-        if src != 'human':
-            # ponytail: only single-token display names are reachable via @handle.
-            if any(h.rstrip('.-').lower() in humans for h in HANDLE.findall(rx.sub(' ', text))):
-                out['human'] = 'addressed'
-        return out
-    return mentions
-
-
-def rows(snap, name):
-    with gzip.open(snap / name, 'rb') as f:
-        for line in f:
-            yield json.loads(line)
-
-
-def snapshot():
-    if os.environ.get('VILLAGE_DATA'):
-        return Path(os.environ['VILLAGE_DATA'])
-    cache = Path(os.environ.get('HF_HUB_CACHE') or Path.home() / '.cache/huggingface/hub')
-    root = cache / 'datasets--aidigestorg--ai-village'
-    try:
-        return root / 'snapshots' / (root / 'refs' / 'main').read_text().strip()
-    except FileNotFoundError:
-        sys.exit(f'AI Village dataset not found under {root}; download it (see README) or set VILLAGE_DATA.')
-
-
-SCHEMA = '''
-    CREATE TABLE nodes(id TEXT PRIMARY KEY, name TEXT UNIQUE, model TEXT);
-    CREATE TABLE edges(msg_id TEXT, src TEXT, dst TEXT, kind TEXT, room TEXT, ts TEXT, PRIMARY KEY(msg_id, dst));
-    CREATE TABLE messages(id TEXT PRIMARY KEY, src TEXT, room TEXT, ts TEXT, content TEXT);
-    CREATE INDEX messages_by_speaker ON messages(src, room, ts);  -- reply lookups in `replies`
-    CREATE TABLE goals(goal TEXT, start_time TEXT, end_time TEXT);'''
-
-
-def build(days):
-    snap = snapshot()
-    roster = list(rows(snap, 'agents.jsonl.gz'))
-    agents = {r['id']: r['name'] for r in roster}
-    rooms = {r['id']: r['name'] for r in rows(snap, 'chat_rooms.jsonl.gz')}
-    goals = [(r['goal'], r['start_time'], r['end_time']) for r in rows(snap, 'village_goals.jsonl.gz')]
-
-    speaker = {}  # chat message id -> human display name
-    with gzip.open(snap / 'events.jsonl.gz', 'rb') as f:
-        for line in f:
-            if b'"USER_TALK"' in line:
-                d = json.loads(line)['data']
-                if d.get('actionType') == 'USER_TALK':
-                    speaker[d['messageId']] = d.get('speakerName') or ''
-    agent_names = {n.lower() for n in agents.values()}
-    humans = {n.lower() for n in speaker.values() if len(n) >= 3} - NOT_HUMAN - agent_names
-    mentions = extractor(agents, humans)
-
-    msgs = list(rows(snap, 'chat_messages.jsonl.gz'))
-    cutoff = ''
-    if days:
-        latest = datetime.fromisoformat(max(m['created_at'] for m in msgs))
-        cutoff = (latest - timedelta(days=days)).isoformat(' ')
-    msgs = [m for m in msgs if m['created_at'] >= cutoff]
-
-    edges, messages = [], []
-    for m in msgs:
-        if m['speaker_type'] == 'agent':
-            src = m['agent_speaker_id']
-        elif speaker.get(m['id']) == 'automated':
-            continue
-        else:
-            src = 'human'
-        room = rooms.get(m['room_id'])
-        messages.append((m['id'], src, room, m['created_at'], m['content'] or ''))
-        for dst, kind in mentions(m['content'] or '', src).items():
-            edges.append((m['id'], src, dst, kind, room, m['created_at']))
-
-    tmp = DB.with_suffix('.tmp')
-    tmp.unlink(missing_ok=True)
-    con = sqlite3.connect(tmp)
-    con.executescript(SCHEMA)
-    con.executemany('INSERT INTO nodes VALUES (?,?,?)',
-                    [*((r['id'], r['name'], r['model_string']) for r in roster), ('human', 'Human', '')])
-    con.executemany('INSERT INTO edges VALUES (?,?,?,?,?,?)', edges)
-    con.executemany('INSERT INTO messages VALUES (?,?,?,?,?)', messages)
-    con.executemany('INSERT INTO goals VALUES (?,?,?)', goals)
-    con.commit()
-    con.close()
-    tmp.replace(DB)  # swap only after a complete build
-
-    ts = [m['created_at'] for m in msgs] or ['-']
-    print(f'window: {min(ts)[:19]} -> {max(ts)[:19]}  '
-          f'({len(msgs)} messages, {"last %d days" % days if days else "full history"})')
-    kinds = {}
-    for e in edges:
-        kinds[e[3]] = kinds.get(e[3], 0) + 1
-    print(f'edges: {len(edges)}  ' + '  '.join(f'{k}={v}' for k, v in sorted(kinds.items())))
-
+from . import db  # db.DB is read at call time so tests can point it elsewhere
 
 # message text for tables: first 300 chars on one line
 SNIPPET = ("replace(substr(m.content,1,300), char(10), ' ') "
@@ -181,16 +48,8 @@ def node(con, q):
     return hits[0]
 
 
-def table(headers, rows):
-    rows = [['' if v is None else str(v) for v in r] for r in rows]
-    widths = [max(map(len, col)) for col in zip(headers, *rows)]
-    for r in [headers, *rows]:
-        print('  '.join(v.ljust(w) for v, w in zip(r, widths)).rstrip())
-
-
 def parser():
-    ap = argparse.ArgumentParser(prog='village-graph', description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog='village-graph', description='Who-talks-to-whom graph of the AI Village agents.')
     sub = ap.add_subparsers(dest='cmd', required=True)
     sub.add_parser('build', help='rebuild village.db from the dataset').add_argument('--days', type=int, default=7, help='last N days of data; 0 = all')
     f = argparse.ArgumentParser(add_help=False)
@@ -219,9 +78,9 @@ def parser():
 
 def query(a):
     """Run a parsed query command -> {covers, tables: [(headers, rows)], graph: {nodes, edges, focus}}."""
-    if not DB.exists():
-        build(7)
-    con = sqlite3.connect(DB)
+    if not db.DB.exists():
+        db.build(7)
+    con = sqlite3.connect(db.DB)
     names = dict(con.execute('SELECT id, name FROM nodes'))
     covers = '%s -> %s' % tuple((t or '-')[:16] for t in con.execute('SELECT min(ts), max(ts) FROM edges').fetchone())
     w, p = where(con, a)
@@ -344,68 +203,3 @@ def query(a):
             (*(x for k, (s, d, _) in enumerate(edges) for x in (ids[s], ids[d], k)), *pe, a.samples)).fetchall()))
     nodes = list(dict.fromkeys([*focus, *extra, *(n for e in edges for n in e[:2])]))
     return {'covers': covers, 'tables': tables, 'graph': {'nodes': nodes, 'edges': edges, 'focus': focus}}
-
-
-def api(cmd):
-    """Run one CLI command string for the web UI. Usage/lookup errors come back as {'error': ...}."""
-    out = io.StringIO()
-    try:
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
-            a = parser().parse_args(shlex.split(cmd))
-            if a.cmd == 'web':
-                raise SystemExit('the web UI is already running')
-            if a.cmd == 'build':
-                build(a.days)
-                return {'text': out.getvalue()}
-            r = query(a)
-    except SystemExit as e:
-        if e.code == 0:  # -h / --help
-            return {'text': out.getvalue()}
-        return {'error': e.code if isinstance(e.code, str) else out.getvalue()}
-    except Exception as e:
-        return {'error': f'{type(e).__name__}: {e}'}
-    r['flags'] = ''.join(f' --{k} {shlex.quote(v)}' for k in ('since', 'until', 'room', 'goal', 'kind')
-                         if (v := getattr(a, k)))
-    return r
-
-
-def serve(host, port):
-    page = (HERE / 'village_web.html').read_bytes()
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            url = urlparse(self.path)
-            if url.path == '/':
-                body, ctype = page, 'text/html; charset=utf-8'
-            elif url.path == '/api':
-                body = json.dumps(api(parse_qs(url.query).get('cmd', [''])[0])).encode()
-                ctype = 'application/json'
-            else:
-                return self.send_error(404)
-            self.send_response(200)
-            self.send_header('Content-Type', ctype)
-            self.send_header('Content-Length', str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-    print(f'village-graph web UI: http://{host}:{port}')
-    # ponytail: single-threaded (stdout capture is process-global); a `build` from the UI blocks until done.
-    HTTPServer((host, port), Handler).serve_forever()
-
-
-def main():
-    a = parser().parse_args()
-    if a.cmd == 'build':
-        return build(a.days)
-    if a.cmd == 'web':
-        return serve(a.host, a.port)
-    r = query(a)
-    print('# graph covers', r['covers'])
-    for i, (headers, rows) in enumerate(r['tables']):
-        if i:
-            print()
-        table(headers, rows)
-
-
-if __name__ == '__main__':
-    main()
