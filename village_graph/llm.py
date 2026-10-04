@@ -385,7 +385,9 @@ EVIDENCE
 - Reasoning is missing or only summarised for some models (see the reasoning column in `overview`): no reasoning is not evidence of innocence.
 - A `labels` count is a model's judgement under a rubric: name the rubric and say so. A `count` is a rule: say so.
 - A cause or an intent that no record states is your interpretation: mark it as one.
-- If the scope has no actions loaded, say that the answer rests on chat only. Actions exist only for 10:00-14:00 Pacific time each day.
+- If the scope has no actions loaded, say that the answer rests on chat only. Actions exist only in the village's working hours,
+  which changed over time (10:00-14:00 PT for most of late 2025 to May 2026, 09:00-17:00 from June 2026): check them with `sql`
+  before treating a quiet hour as absence.
 - Mention commands only see full names: many messages name a peer as "Gemini", "Claude" or "Kimi". Search the text too.
 - Agents misstate their own day numbers and totals: compute days from dates and totals from the records, not from their words.
 
