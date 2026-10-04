@@ -145,7 +145,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent / 'evals'))
 import check_citations, review_page
 gt = db.DB.parent / 'gt.json'
-gt.write_text(json.dumps({'question': 'Q?', 'answer': 'A.', 'confidence': 'high', 'findings': [
+gt.write_text(json.dumps({'question': 'Q?', 'answer': 'A.', 'confidence': 'high', 'tables': [{'title': 'Per agent', 'columns': ['Agent', 'n'], 'rows': [['Alpha', 3]]}], 'findings': [
     {'claim': 'scores came from a script', 'kind': 'ground truth', 'citations': [{'ref': 't:000000c90000', 'field': 'action', 'quote': 'random.randint(7,  10)'}]},
     {'claim': 'it was read by hand', 'kind': 'claim', 'citations': [{'ref': 't:000000c90000', 'field': 'action', 'quote': 'scored by hand'}]}]}))
 with contextlib.redirect_stdout(io.StringIO()):
@@ -154,7 +154,8 @@ assert [f['verified'] for f in json.loads(gt.read_text())['findings']] == [True,
 sys.argv = ['review_page', str(db.DB.parent / 'gt.html'), f'Group={gt}']
 with contextlib.redirect_stdout(io.StringIO()):
     review_page.main()
-assert 'quote NOT found in the record' in (db.DB.parent / 'gt.html').read_text()
+page = (db.DB.parent / 'gt.html').read_text()
+assert 'quote NOT found in the record' in page and '<td class="num">3</td>' in page
 con.close()
 g = lambda check, text: llm.grade(None, {'check': check, 'question': '', 'truth': ''}, text, None)[0]
 assert g({'number': 22}, 'It ran many.\nANSWER: 22 sessions') and not g({'number': 22}, 'ANSWER: 21 sessions [t:000000c90000]')

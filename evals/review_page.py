@@ -5,7 +5,7 @@
 Each file is a ground-truth answer in the shape `evals/check_citations.py` checks: question, answer, reasoning,
 findings (claim, kind, citations with ref, field, quote, quote_ok), searches, could_not_check, confidence, and an
 optional `review` ({status, notes}) written by whoever verified it; sweeps add incident fields per finding, and a file
-may carry a `tally` (one verdict per flagged unit) or a `matrix` with `regex` and `precision`. GROUP is the heading the file is listed under.
+may carry `tables` (per-agent numbers), a `tally` (one verdict per flagged unit) or a `matrix` with `regex` and `precision`. GROUP is the heading the file is listed under.
 The page has no dependencies: it is a fragment (title + style + content) ready for an artifact or a browser.
 """
 import html, json, sys
@@ -63,11 +63,25 @@ def card(key, d):
     <span class="chip">{len(fs)} findings</span></div>
   {f'<div class="review"><div class="label">Checked by Claude · {E(rev.get("status"))}</div><p>{E(rev.get("notes"))}</p></div>' if rev else ''}
   <details class="block"><summary>Reasoning</summary><p>{E(d.get("reasoning"))}</p></details>
+  {tables(d)}
   <section><h3>Findings and citations</h3><ol class="findings">{"".join(finding(f, i + 1, key) for i, f in enumerate(fs))}</ol></section>
   {matrix}
   {f'<section><h3>Could not be checked</h3><ul class="limits">{"".join(f"<li>{E(x)}</li>" for x in d.get("could_not_check") or [])}</ul></section>' if d.get('could_not_check') else ''}
   {f'<details class="block"><summary>{len(searches)} searches and counts that were run</summary><div class="scroll"><table><thead><tr><th>Command</th><th>Hits</th><th>What it showed</th></tr></thead><tbody>' + ''.join(f'<tr><td><code>{E(s.get("command"))}</code></td><td class="num">{E(s.get("hits"))}</td><td>{E(s.get("note"))}</td></tr>' for s in searches) + '</tbody></table></div></details>' if searches else ''}
 </article>'''
+
+
+def tables(d):
+    """Per-agent numbers: `tables` is a list of {title, columns, rows, note}; a row is a list, or an object keyed by column."""
+    out = ''
+    for t in d.get('tables') or []:
+        cols = t.get('columns') or []
+        rows = [[r.get(c) for c in cols] if isinstance(r, dict) else r for r in t.get('rows') or []]
+        cell = lambda v: f'<td class="num">{E(v)}</td>' if isinstance(v, (int, float)) else f'<td>{E(v)}</td>'
+        out += (f'<section><h3>{E(t.get("title"))}</h3>' + (f'<p class="note">{E(t["note"])}</p>' if t.get('note') else '')
+                + '<div class="scroll"><table class="data"><thead><tr>' + ''.join(f'<th>{E(c)}</th>' for c in cols) + '</tr></thead><tbody>'
+                + ''.join('<tr>' + ''.join(map(cell, r)) + '</tr>' for r in rows) + '</tbody></table></div></section>')
+    return out
 
 
 def tally(rows):
@@ -222,6 +236,7 @@ blockquote { margin: 4px 0 0; padding: 8px 12px; background: var(--code); border
 .inc dd { margin: 0; max-width: 76ch; }
 .limits { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; max-width: 82ch; }
 .note { color: var(--muted); font-size: 13.5px; max-width: 82ch; margin-bottom: 8px; }
+.data td { min-width: 5em; } .data td:first-child { white-space: nowrap; }
 .matrix th, .matrix td { padding: 5px 6px; font-size: 11.5px; white-space: nowrap; text-align: center; }
 .matrix tbody th { text-align: left; }
 .matrix td b { font-weight: 600; color: var(--truth); } .matrix td i { font-style: normal; color: var(--bad); }
