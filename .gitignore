@@ -1,5 +1,5 @@
 # Local environment
-.venv/
+.venv
 __pycache__/
 *.py[cod]
 
@@ -18,3 +18,4 @@ docetl/out/
 evals/ground_truth/
 web.log
 build_all.log
+evals/ground_truth_questions.json

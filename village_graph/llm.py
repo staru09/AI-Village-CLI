@@ -561,6 +561,8 @@ def grade(cl, q, text, spend):
 
 def eval(a):  # noqa: A001 (the command's name)
     qs = json.loads(Path(a.file).read_text())
+    for q in qs:
+        q.setdefault('truth', q.get('answer'))  # evals/ground_truth_questions.json: question and answer only
     if a.ids:
         qs = [q for q in qs if q['id'] in a.ids.split(',')]
     cl, judge_spend, t0 = client(), Spend(), time.time()

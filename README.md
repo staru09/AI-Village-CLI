@@ -1,5 +1,7 @@
 # AI Village CLI
 
+> Results so far: [writeup.md](writeup.md); every run: [experiments.md](experiments.md).
+
 `village` answers questions about the [AI Village](https://theaidigest.org/village) from the
 [`aidigestorg/ai-village`](https://huggingface.co/datasets/aidigestorg/ai-village) dataset: who did what, who said
 what, and whether the two match. It loads the dataset into one local SQLite file and gives you (or an AI agent) small
