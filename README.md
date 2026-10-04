@@ -110,3 +110,11 @@ uv run village web                                           # the same commands
 `village -h` lists every command, and `village <command> -h` its options. [USAGE.md](USAGE.md) explains them, the
 rubric format, the eval set and the database schema. All times are Pacific time (the village clock). `village.db`,
 `labels.db`, `history.jsonl`, `evals/runs/` and `evals/ground_truth/` quote the gated dataset and are not part of the repo.
+
+## Experiment scripts (branch `experiments`)
+
+| Script | What it does | Log |
+|---|---|---|
+| `docetl/run.py` | DocETL pipelines over one goal: `delegation`, `goal_fit`, `groups`, `counts` (needs `.venv-docetl`) | E17 |
+| `village_graph/rlm_run.py` (`village rlm`) | a Recursive Language Model over one goal (needs the `rlm` extra and Docker); parked | E10 |
+| `evals/harness_vs_docetl.py` | our harness against a DocETL pipeline on ground-truth questions, judged blind by `gpt-6.1-sol` | E22 |

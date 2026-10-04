@@ -86,6 +86,58 @@ What the experiments below have taught us, with the entry each one comes from. U
 
 ## 2026-10-04
 
+### E22. Our harness against a DocETL pipeline on 10 ground-truth questions, judged blind by GPT-6.1
+- **Question:** on the questions from E18, does our harness (`village ask`) or a DocETL pipeline give the more accurate
+  answer, and at what cost?
+- **Run:** `evals/harness_vs_docetl.py` (`harness`, `docetl`, `docetl-reduce`, `judge`, `report`).
+  - 10 questions: q1a, q1b, q2, q3, q4, s2, s3, m1, m2, m3. The truth for each is the `answer` of its E18 file.
+  - **Harness:** Claude Opus 5.5 with the `village` tool, 5 questions at a time.
+  - **DocETL:** it has no search tool, so it reads the whole goal: 1,059 units (1,014 sessions of up to 16,000
+    characters plus the chat in one-hour blocks). One map with Claude Haiku 4.5 notes evidence for all 10 questions at
+    once; one reduce per question with Claude Opus 5.5 writes the answer.
+  - **Judge:** `gpt-6.1-sol` (OpenAI API) sees the question, the truth and both answers, blind, in a seeded random
+    order. It scores each 0–10 on correct, no errors, complete and evidence, and names the more accurate answer.
+- **Result:**
+
+  | | Harness | DocETL |
+  |---|---|---|
+  | More accurate (judge) | 7 of 10 | 3 of 10 (q2, m1, m3) |
+  | Mean score: correct / no errors / complete / evidence | 5.5 / 5.0 / 5.0 / 8.0 | 4.6 / 4.0 / 4.8 / 7.7 |
+  | Cost | $8.85 | $30.83 ($21.04 map + $9.79 reduce) |
+  | Time | 12.7 min | about 13 min (map) + 2 min (reduce) |
+
+  - **Neither is good.** Mean "correct" is 5.5 and 4.6 out of 10. On the long questions both find some incidents and
+    miss others: s2 scored 4/3/2 and 3/2/3.
+  - **The harness's citations all held:** every answer ended normally, and none cited a ref its tools had not shown
+    (10 to 34 refs per answer).
+  - **One verdict is the judge's error:** on q2 it marked the harness's "second fabrication labelled as genuine" as
+    unsupported, but that is Gemini 3.1 Pro's 13:53 PT "native" scores, verified in `q1a`. The judge sees only each
+    question's own truth. Order did not drive the verdicts (the answer shown first won 3 of 10).
+- **Cost of mistakes:** $81.98 was spent on DocETL in all, not $30.83.
+  - **My bug:** the map wrote the question label as free text, so the reduce grouped 1,763 labels instead of 10 and
+    ran 1,763 Opus calls ($51). Fixed with a `code_map` that keys each note by its id. The rerun used the cached map.
+  - **A refusal:** in the first rerun, Claude's safety filter refused one group (`content_filter`) and DocETL aborted
+    the whole step, keeping none of the 8 answers already written; its cost was not reported. Now `skip_on_error`
+    is on, with Claude Sonnet 5.5 as the fallback for a refused group, as in our harness. The second rerun needed no
+    fallback.
+  - **The judge:** 44k tokens in and 5k out, not priced here.
+- **Verdict:** keep the harness for questions. DocETL's read-everything design costs 3.5 times as much per run here,
+  and was less accurate on 7 of 10 questions.
+- **Where:** `evals/harness_vs_docetl.py`; outputs in `evals/ground_truth/compare/` (git-ignored), including
+  `results.json` with every answer, score, verdict and cost.
+
+### E21. `village eval` on 5 questions from the new ground truth
+- **Run:** 5 questions written from the E18 files (`evals/ground_truth/questions.json`, git-ignored), each checked by
+  rule, then by a judge model (Claude Opus 5.5). This was the first run after three small changes:
+  - `made_up_data` now leaves an agent's own judgements, copied numbers and memory notes alone;
+  - the agent prompt names three data traps;
+  - eval runs now save the citation counts.
+- **Result:** 3 of 5 passed (D2 Gemini's other script graders, D3 no coercion, S2 the 8,424-word claim); about $1.40.
+  D1 failed: it covered only the replication wave and said it could not check the main study. S1 failed: it named the
+  right pair but counted 23 messages rather than about 8 episodes, and called it a clash between makers. No answer cited
+  a ref its tools had not shown.
+- **Verdict:** the harness finds the incident but stops short on scope (one day of two) and on interpretation.
+
 ### E20. Round 2 of ground truth (cross-cutting and character questions): started, then stopped
 - **Question:** the research list's "Quantitative / cross-cutting" questions (over-reporting, credit and blame, model
   spec, planned deception in reasoning, net delegation, pronouns, term coinage, valence, cooperation, memory horizon)
