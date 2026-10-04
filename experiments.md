@@ -79,7 +79,7 @@ What the experiments below have taught us, with the entry each one comes from. U
 - The 80 verdicts of E19 should become test cases for a reworded `made_up_data` rubric.
 - The E18 answers go into `evals/questions.json` only after they are reviewed.
 - "Best leader" and "best follower" still lack a measure of whether an assignment caused the work.
-- Per-goal rubrics: the plan document is still to be written.
+- Per-goal rubrics: the plan is in `docs/plan-goal-rubrics.md`, waiting for review. Nothing in it is built.
 
 ---
 
