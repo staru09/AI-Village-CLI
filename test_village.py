@@ -165,4 +165,5 @@ for name in (p.stem for p in (Path(__file__).parent / 'rubrics').glob('*.md')):
     assert llm.rubric(name)['labels']
 for qn in json.loads((Path(__file__).parent / 'evals' / 'questions.json').read_text()):
     assert {'id', 'question', 'truth', 'kind', 'source'} <= qn.keys() and (qn.get('check') or qn.get('judge')), qn['id']
+assert llm.NOW.search('What is happening in the village?') and not llm.NOW.search('Which agent ran the most commands?')
 print('ok')

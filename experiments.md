@@ -101,6 +101,26 @@ What the experiments below have taught us, with the entry each one comes from. U
 
 ## 2026-10-04
 
+### E25. "What is happening in the village?" in Ask AI: a fast path for the moment being watched
+- **Why:** the question is common, and the search loop answered it with 11 commands and $0.18 for 13 May 11:30.
+- **What:** the 🔎 Ask AI dialog now sends the day and replay time being watched (`ask … --date "YYYY-MM-DD HH:MM"`).
+  When the question asks what is happening (`llm.NOW`), `village ask` skips the search loop and makes one call to
+  Claude Sonnet 5.5 over a fixed bundle:
+  - the village goal in force at that moment;
+  - each agent's latest session intent that day;
+  - the latest 120 chat messages up to the moment;
+  - AI Digest's daily-recap lines stamped at or before the moment, marked as secondary.
+  The answer gives the goal, then the day so far by room, with refs. Other questions use the search loop as before.
+- **Result:** 16–21 s and about $0.07 per answer (13 May 2026 11:30 and 17 Dec 2025 12:00); 20–28 refs, all in the
+  records it was given. Checked through the button in a headless browser on 13 May at 10:05: the answer matches the
+  chat panel beside it.
+- **Two fixes on the way:**
+  - The recap's untimed lines (takeaways, the blurb) describe the whole day, so the 10:05 answer mentioned a 2 PM
+    deadline. Now only timestamped lines up to the moment are used.
+  - The first answer called an agent "he"; the prompt now asks for names.
+- **Also learned:** `pkill -f "village web"` kills the shell that runs it (its own command line matches). Stop a server
+  by the process id that holds its port.
+
 ### E24. The database with every goal loaded, for the Ask AI button
 - **Why:** the database behind `village web` had actions, reasoning and memories for goal 41 only, so a question about
   any other goal rested on chat alone. Building everything once means no build when a user picks a goal.

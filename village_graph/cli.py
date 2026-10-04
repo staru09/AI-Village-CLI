@@ -137,6 +137,7 @@ def parser():
     p = add('ask', 'a question in plain English, answered by an agent that runs these commands and cites refs', scoped=False)
     p.add_argument('question')
     p.add_argument('--goal', help='scope hint given to the agent')
+    p.add_argument('--date', help='the day (and time) the user is watching, "YYYY-MM-DD [HH:MM]" Pacific: answers "what is happening" for it')
     p.add_argument('--model', help='default: $VILLAGE_ASK_MODEL or claude-opus-5-5')
     p.add_argument('--max-steps', type=int, default=40)
     p.add_argument('--quiet', action='store_true', help="don't print each command as it runs")

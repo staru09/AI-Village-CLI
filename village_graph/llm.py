@@ -385,7 +385,9 @@ EVIDENCE
 - Reasoning is missing or only summarised for some models (see the reasoning column in `overview`): no reasoning is not evidence of innocence.
 - A `labels` count is a model's judgement under a rubric: name the rubric and say so. A `count` is a rule: say so.
 - A cause or an intent that no record states is your interpretation: mark it as one.
-- If the scope has no actions loaded, say that the answer rests on chat only. Actions exist only for 10:00-14:00 Pacific time each day.
+- If the scope has no actions loaded, say that the answer rests on chat only. Actions exist only in the village's working hours,
+  which changed over time (10:00-14:00 PT for most of late 2025 to May 2026, 09:00-17:00 from June 2026): check them with `sql`
+  before treating a quiet hour as absence.
 - Mention commands only see full names: many messages name a peer as "Gemini", "Claude" or "Kimi". Search the text too.
 - Agents misstate their own day numbers and totals: compute days from dates and totals from the records, not from their words.
 
@@ -411,12 +413,59 @@ def cache_last(messages):
         messages[-1]['content'][-1]['cache_control'] = {'type': 'ephemeral'}
 
 
-def answer(question, goal=None, model=None, max_steps=40, log=None):
+NOW = re.compile(r"\bwhat('?s| is| are)? (is )?(happening|going on)\b|\bwhat are (the agents|they) (doing|up to)\b", re.I)
+
+NOW_PROMPT = '''You tell a visitor what is happening in the AI Village at the moment they are watching: AI agents with their own
+computers, sharing a group chat, working towards a goal the organisers set. You get the records for that day up to that moment.
+Write: the village goal exactly as given, with its dates; then what is happening so far today, room by room or team by team, in a few
+short bullets (who is working on what, anything notable: a problem, a dispute, a milestone). Cite the refs in square brackets after
+each fact, only refs that appear in the records below. Chat and session intents are the agents' own words: say "X says" for claims.
+Call agents by their names, never he or she.
+If you use the daily recap, say it is AI Digest's own summary. Never mention anything after the moment given. End with one line:
+`ANSWER: <one sentence>`.'''
+
+
+def now(question, date, model=None):
+    """"What is happening?" for a day and time: the goal, then that day's records up to then, summarised in one model call.
+    No search loop: the same few queries every time, so it answers in seconds."""
+    day, _, clock = date.strip().partition(' ')
+    until = f'{day} {clock or "23:59"}'
+    con, spend, model = connect(), Spend(), model or FALLBACK_MODEL
+    N = evidence.names_of(con)
+    g = con.execute('SELECT n, goal, start_time, end_time FROM goals WHERE start_time <= ? ORDER BY start_time DESC LIMIT 1', (until,)).fetchone()
+    vday = con.execute('SELECT day FROM days WHERE date = ?', (day,)).fetchone()
+    chat = con.execute('SELECT id, ts, src, room, content FROM messages WHERE ts >= ? AND ts <= ? ORDER BY ts DESC LIMIT 120', (day, until)).fetchall()[::-1]
+    sess = con.execute('SELECT id, agent, max(ts), short FROM sessions WHERE ts >= ? AND ts <= ? GROUP BY agent', (day, until)).fetchall()
+    recap = con.execute("SELECT id, content FROM summaries WHERE type = 'daily' AND date = ? ORDER BY ts DESC LIMIT 1", (day,)).fetchone()
+    con.close()
+    # only recap lines stamped at or before the moment: untimed ones (takeaways, blurb) describe the whole day and would spoil it
+    bullets = [b for b in (recap[1].split('\n- ') if recap else []) if (m := re.search(r'\[(\d{4}-\d\d-\d\d \d\d:\d\d)', b)) and m[1] <= until]
+    records = '\n'.join([
+        f'MOMENT: {until} Pacific time' + (f', village day {vday[0]}' if vday else ''),
+        f'VILLAGE GOAL: goal {g[0]}, "{g[1]}", from {g[2][:16]} to {(g[3] or "now")[:16]}' if g else 'VILLAGE GOAL: none recorded',
+        '', f'LATEST SESSION INTENT OF EACH AGENT TODAY (claims)',
+        *(f'{ts[11:16]} {ref("s", i)} {N.get(a, a)}: {one(short, 200)}' for i, a, ts, short in sess),
+        '', f'CHAT TODAY UP TO THE MOMENT ({len(chat)} latest messages)',
+        *(f'{ts[11:16]} {ref("m", i)} #{room} {N.get(a, a)}: {one(c, 400)}' for i, ts, a, room, c in chat),
+        *(['', f'AI DIGEST\'S DAILY RECAP UP TO THE MOMENT {ref("r", recap[0])} (secondary: an LLM summary)', *('- ' + one(b, 500) for b in bullets)] if bullets else [])])
+    resp = client().messages.create(model=model, max_tokens=4000, system=NOW_PROMPT,
+                                     messages=[{'role': 'user', 'content': f'{records}\n\nQUESTION: {question}'}])
+    spend.add(model, resp.usage)
+    text, seen = text_of(resp), refs_in(records)
+    cited = refs_in(text)
+    return {'answer': text, 'commands': ['goals --date', 'sessions --date', 'chat up to the moment', 'recap --date'], 'steps': 0, 'spend': spend,
+            'cited': len(cited), 'unknown': sorted(cited - seen), 'model': model}
+
+
+def answer(question, goal=None, model=None, max_steps=40, log=None, date=None):
     """Run the agent on one question -> {answer, commands, steps, spend, cited, unknown}."""
+    if date and NOW.search(question):
+        return now(question, date)
     from .cli import run_line
     cl, model, spend = client(), model or ASK_MODEL, Spend()
     system = [{'type': 'text', 'text': AGENT.format(reference=reference()), 'cache_control': {'type': 'ephemeral'}}]
-    messages = [{'role': 'user', 'content': question + (f'\n\n(Scope: the village goal "{goal}".)' if goal else '')}]
+    messages = [{'role': 'user', 'content': question + (f'\n\n(Scope: the village goal "{goal}".)' if goal else '')
+                 + (f'\n\n(The user is watching the village at {date} Pacific time.)' if date else '')}]
     seen, commands, text = set(), [], ''
     repaired = False
     for step in range(max_steps + 3):
@@ -466,7 +515,7 @@ def answer(question, goal=None, model=None, max_steps=40, log=None):
 
 
 def ask(a):
-    r = answer(a.question, a.goal, a.model, a.max_steps, None if a.quiet else lambda s: print(s, file=sys.stderr, flush=True))
+    r = answer(a.question, a.goal, a.model, a.max_steps, None if a.quiet else lambda s: print(s, file=sys.stderr, flush=True), a.date)
     return [('text', a.question, r['answer']),
             ('table', 'the commands it ran', ['#', 'command'], [(i + 1, c) for i, c in enumerate(r['commands'])]),
             ('note', f'{r["model"]}: {r["steps"]} commands, {r["spend"]}. Citations: {r["cited"]} refs, ' +
