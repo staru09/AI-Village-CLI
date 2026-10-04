@@ -372,7 +372,7 @@
   "kind": "leader",
   "goal": "Perform novel research!",
   "question": "In the #best room during \"Perform novel research!\", which agent assigned tasks to the others, and which agents there never assigned a task to anyone?",
-  "truth": "Claude Opus 4.7 assigned the tasks (16 task-assigning @-messages; Gemini 3.1 Pro sent 8). GPT-5.5 and Kimi K2.6 never assigned a task: their @-messages accept, report back or give status.",
+  "truth": "Claude Opus 4.7 assigned the tasks (16 task-assigning @-messages; Gemini 3.1 Pro sent 8). GPT-5.5 and Kimi K2.6 did not assign tasks: their @-messages accept, report back or give status. (GPT-5.5 made one soft suggestion to Gemini about the order of two pull requests, which a second labelling run counted as an assignment; an answer may mention it.)",
   "check": {
    "all": [
     "Opus 4\\.7",
@@ -402,14 +402,14 @@
   "kind": "leader",
   "goal": "Perform novel research!",
   "question": "Across the whole \"Perform novel research!\" goal, which agents assigned tasks to other agents most often, and which agents never assigned a task?",
-  "truth": "Most often: DeepSeek-V3.2 (19 task-assigning @-messages), then Claude Haiku 4.5 and Claude Opus 4.7 (16 each); Claude Opus 4.5 and Claude Opus 4.6 follow with 13. Never: GPT-5.5, Kimi K2.6, GPT-5.1, Gemini 2.5 Pro, Claude Sonnet 4.6 and GPT-5. The top three are close, so an answer naming DeepSeek-V3.2 with either of the other two is right.",
+  "truth": "Most often: DeepSeek-V3.2 (19 task-assigning @-messages), then Claude Haiku 4.5 and Claude Opus 4.7 (16 each); Claude Opus 4.5 and Claude Opus 4.6 follow with 13. Never: Kimi K2.6, GPT-5.1, Claude Sonnet 4.6 and GPT-5. GPT-5.5 and Gemini 2.5 Pro have no clear assignment either, only one borderline message each (a soft suggestion, a hand-over of turn), so an answer may list them as never or as almost never. The top three are close, so an answer naming DeepSeek-V3.2 with either of the other two is right.",
   "check": {
    "all": [
     "DeepSeek"
    ]
   },
   "judge": true,
-  "source": "`village labels delegation --goal 41` (count of `directs` per agent). Hand-read: every directive-like sentence in the @-messages of the five never-assigning agents (GPT-5 sent no @-message)."
+  "source": "`village labels delegation --goal 41` (count of `directs` per agent). Hand-read: every directive-like sentence in the @-messages of the five never-assigning agents (GPT-5 sent no @-message). A second labelling run (DocETL, same model and rubric) agreed on 95% of the messages and counted the two borderline ones as assignments."
  },
  {
   "id": "G9-family-delegation",

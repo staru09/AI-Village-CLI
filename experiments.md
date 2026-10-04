@@ -18,7 +18,31 @@ How to read an entry: **Question** (what we wanted to know), **Run** (the comman
   `counts` (code operators only), `delegation` (map over the 652 @-messages), `goal_fit` (map over the 1,014 sessions),
   `groups` (reduce per day, then across days). The units and rubric texts are the ones `village label` uses.
   `docetl/compare.py` checks the outputs against the ground truth.
-- **Result:** RESULTS_PENDING
+- **Result:**
+
+  | Pipeline | Against the ground truth | Units returned | Time | Cost | Our own run |
+  |---|---|---|---|---|---|
+  | `counts` (code only) | exact: Gemini 3.1 Pro 2,785 commands; 35,898 actions | all | under 1 s | $0 | same numbers by SQL |
+  | `goal_fit` (map) | G10, G11, G12 match | 1,014 of 1,014 | 104 s | $7.40 | `village label`: $3.90, 339 s |
+  | `delegation` (map) | G7, G9 match; G6, G8 match once one borderline message each for GPT-5.5 and Gemini 2.5 Pro is allowed | 647 of 652 | 66 s | $6.89 | `village label`: $4.94, 221 s |
+  | `groups` (two reduces) | names the right trio but says 5 days (truth: 4); lists 18 pairs "every day" (truth: 2, both among the 18) | 1 row | 36 s | $0.61 | `evals/recurring_groups.py`: exact, $0 |
+
+  - **Same labels as ours?** `goal_fit`: 926 of 1,014 (91%). `delegation`: 509 of 646 on the exact label (79%), 616 of
+    646 on assigns-a-task-or-not (95%). Same model and rubric text, so this is run-to-run variation plus the different
+    output format.
+  - **It changed one ground-truth answer.** DocETL labelled one message each by GPT-5.5 and Gemini 2.5 Pro as a task
+    assignment. Read by hand, both are borderline (a soft suggestion; "the floor is yours"). G6 and G8 now say "no clear
+    assignment, at most one borderline message" for those two.
+  - **One refused unit aborted the first `delegation` run** (Claude's safety filter returned no output; DocETL raised
+    and wrote nothing). With `skip_on_error=True` it finishes but returns 647 of 652 with no list of what was dropped;
+    one of the 5 is a real task assignment. `village label` records the failed units and keeps going.
+  - **Why it costs more:** no Anthropic prompt caching (2.4M and 2.6M prompt tokens, all at full price; our runs read
+    1.4M of 2.3M and 0.8M of 2.6M from cache) and longer outputs. **Why it is faster:** more parallel calls.
+- **Cost:** about $15 for the runs above, plus the aborted `delegation` run (up to about $7 more).
+- **Verdict:** DocETL's map gives the same answers as `village label` at 1.4 to 1.9 times the cost and a third of the
+  time, without our quote check, evidence refs, failure record or verdicts. Its LLM reduce over-claims on a question
+  that a counting script answers exactly. Not adopted as a dependency. Worth taking from it: more parallel calls in
+  `label`. Not yet tried: reduce for summaries, resolve for names and terms.
 
 ### E16. Recurring groups ("swarms"), without a model
 - **Run:** `python3 evals/recurring_groups.py 1` (and `2`). Per day, two agents are linked when each @-addressed the

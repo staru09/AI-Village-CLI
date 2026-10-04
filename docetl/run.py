@@ -48,7 +48,9 @@ def label_pipeline(name, model, sample):
     rub, prompt = rubric_prompt(name)
     frame = docetl.from_list(rows).map(
         name=f'label_{name}', prompt=prompt, model=model, output={'schema': {'label': 'str', 'quote': 'str', 'why': 'str'}},
-        validate=[f"output['label'] in {rub['labels']!r}"], num_retries_on_validate_failure=2, **({'sample': sample} if sample else {}))
+        validate=[f"output['label'] in {rub['labels']!r}"], num_retries_on_validate_failure=2,
+        skip_on_error=True,  # without it one refused unit (Claude's safety filter) aborts the whole run and nothing is written
+        **({'sample': sample} if sample else {}))
     return rows, frame
 
 
