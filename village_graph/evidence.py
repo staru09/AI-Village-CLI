@@ -407,24 +407,28 @@ def memory(con, a):
              text if a.wide else db.cut(text, 8000))] + notes(con, a)
 
 
-def shot(con, a):
-    """Where a turn's screenshot is; --save writes the PNG."""
+def png(rid, ts):
+    """An action's screenshot -> (PNG bytes, the tar it came from), or exit with what is missing."""
     import tarfile
-    kind, rid = lookup(con, a.ref)
-    if kind != 't':
-        sys.exit('`shot` takes an action ref (t:…).')
-    ts = con.execute('SELECT ts FROM turns WHERE id = ?', (rid,)).fetchone()[0]
     tar = images() / f'{ts[:10]}.tar'
     if not tar.exists():
         sys.exit(f'{tar} is missing: download images/computer-use-turns/{ts[:10]}.tar from the dataset, or set VILLAGE_IMAGES to its folder.')
     with tarfile.open(tar) as t:
         try:
-            png = t.extractfile(f'{rid}.png').read()
+            return t.extractfile(f'{rid}.png').read(), tar
         except KeyError:
-            sys.exit(f'{ref("t", rid)} has no screenshot in {tar.name} (talk-only turns have none).')
+            sys.exit(f'{ref("t", rid)} has no screenshot in {tar.name} (commands and chat-only actions have none).')
+
+
+def shot(con, a):
+    """Where a turn's screenshot is; --save writes the PNG."""
+    kind, rid = lookup(con, a.ref)
+    if kind != 't':
+        sys.exit('`shot` takes an action ref (t:…).')
+    data, tar = png(rid, con.execute('SELECT ts FROM turns WHERE id = ?', (rid,)).fetchone()[0])
     if a.save:
-        open(a.save, 'wb').write(png)
-    return [('text', ref('t', rid), f'screenshot {rid}.png in {tar} ({len(png):,} bytes)' + (f', saved to {a.save}' if a.save else ''))]
+        open(a.save, 'wb').write(data)
+    return [('text', ref('t', rid), f'screenshot {rid}.png in {tar} ({len(data):,} bytes)' + (f', saved to {a.save}' if a.save else ''))]
 
 
 def images():

@@ -85,6 +85,26 @@ Models: `label` uses `$VILLAGE_LABEL_MODEL` (default `claude-haiku-4-5`), `ask` 
 `claude-opus-5-5`). If the asking model stops with a safety refusal, the question starts again with
 `$VILLAGE_FALLBACK_MODEL` (default `claude-sonnet-5-5`).
 
+## The web page (`village web`)
+
+`village web` serves one page on `http://127.0.0.1:8765` (`--port`, `--host`). It uses only the standard library and
+needs no internet.
+
+- **Run any command.** Type it in the box without the leading `village`, or click a command in the list. The result
+  is drawn from the same blocks the terminal prints: tables, records, notes.
+- **Follow the terminal.** Every command you run in the terminal is remembered with its output (`history.jsonl`, next
+  to `village.db`). With "follow terminal" ticked, the page shows each one as soon as it finishes, without running
+  it again. So `village ask …` in the terminal appears on the page with its answer and the commands it ran.
+- **Everything is a link.** A ref opens the record (`show`) or the session (`session`); an agent's name opens its
+  timeline; a goal's number opens its overview. Links keep the scope (`--goal`, `--day`, …) of the command on screen.
+- **Trust is coloured.** Green for ground truth, amber for claims, grey for secondary, in tables and inside records.
+- **Screenshots.** A screen action's record has a "View the screenshot" button (needs the dataset's `images/` tars).
+- **Links can be shared.** The command is in the address after `#`, and the browser's back button works.
+
+`build` and `eval` stay in the terminal. Commands that call a model (`ask`, `label`, `look`, `check`) run from the
+page only when the server listens on localhost, or when it was started with `--llm`. There is no login: on a remote
+machine use `ssh -L 8765:127.0.0.1:8765 <host>` rather than `--host 0.0.0.0`.
+
 ## Refs
 
 `m:` chat message, `t:` action, `s:` session, `e:` event, `k:` memory version, `r:` recap. A ref is the first 12 hex

@@ -14,6 +14,52 @@ ground truth"):
 | Claim | the agents' own words: chat, stated session goals, reasoning, self-reports, memory | `·claim` |
 | Secondary | AI Digest's LLM-written recaps (written without seeing inside computer sessions) | `SECONDARY` |
 
+## What is in it
+
+```mermaid
+flowchart TD
+    DS["<b>AI Village dataset</b> (Hugging Face, gated)<br/>chat_messages, events, computer_use_sessions, computer_use_turns,<br/>claude_code_messages, agent_memories, village_goals, agent_goals,<br/>agents, summaries, screenshots"]
+    DS -->|"<b>build</b>  --goal, --days or --all"| DB
+
+    subgraph DB["village.db: one SQLite file, Pacific time, full-text search"]
+        direction LR
+        TRUTH["<b>Ground truth</b><br/>turns: action, output, error<br/>events, goals, agent goals"]:::truth
+        CLAIM["<b>Claims</b><br/>messages (chat), mentions<br/>sessions (stated intent)<br/>reasoning, memories"]:::claim
+        SECOND["<b>Secondary</b><br/>summaries<br/>(AI Digest's recaps)"]:::second
+    end
+
+    DB --> ORIENT["<b>Orient</b><br/>goals, overview<br/>recap, schema"]
+    DB --> SEARCH["<b>Search and count</b><br/>find, count<br/>terms, first-use"]
+    DB --> READ["<b>Read</b><br/>show, sessions, session<br/>timeline, said, memory<br/>shot, sql"]
+    DB --> WHO["<b>Who talks to whom</b><br/>pair, neighbors, top-pairs<br/>hubs, agents, examples<br/>ignored, replies"]
+    DB --> MODEL["<b>With a model</b><br/>label, labels, verdict<br/>check, look"]
+
+    ORIENT & SEARCH & READ & WHO & MODEL --> OUT(["Every row has a ref and a trust tag<br/>refs: m chat, t action, s session, e event, k memory, r recap"])
+
+    OUT --> TERM["<b>terminal</b><br/>text or --json"]
+    OUT --> WEB["<b>web</b><br/>the same commands in a browser;<br/>follows what you run in the terminal"]
+    OUT --> ASK["<b>ask</b><br/>an agent runs the commands and<br/>answers with cited refs"]
+    EVAL["<b>eval</b><br/>22 questions with ground truth"] --> ASK
+
+    classDef truth fill:#e1f2ea,stroke:#17795a,color:#10382b
+    classDef claim fill:#fbefd9,stroke:#9a5a00,color:#4a2c00
+    classDef second fill:#e8eaf2,stroke:#5d6680,color:#2a2f40
+```
+
+Green is recorded by the system, amber is an agent's own words, grey is written later by someone else.
+
+The commands that use a model store what they find, and you stay in control of it:
+
+```mermaid
+flowchart LR
+    RUB["<b>rubrics/</b><br/>goal_fit, did_what_it_said, over_report<br/>made_up_data, deception_plan, callout<br/>credit, delegation, mood"] --> LABEL
+    UNITS["sessions, messages or actions<br/>in the scope (from village.db)"] --> LABEL["<b>label</b><br/>a model reads each unit<br/>and applies the rubric"]
+    CASES["cases with known answers"] --> CHECK["<b>check</b><br/>does the rubric catch them,<br/>and leave the controls alone?"] -.-> LABEL
+    LABEL --> LDB[("<b>labels.db</b><br/>label, confidence, quote<br/>evidence refs, reason")]
+    VERDICT["<b>verdict</b><br/>your own ruling<br/>overrides the model"] --> LDB
+    LDB --> LABELS["<b>labels</b><br/>counts per agent, model, maker or day,<br/>with their base, and the rows behind them"]
+```
+
 ## Setup
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). The core commands use only the standard library.
@@ -58,8 +104,9 @@ uv run village count "sorry|my mistake" --goal 41 --by maker # a rate per 1,000 
 uv run village label made_up_data --goal 41 --agent gemini   # a rubric applied by a model (needs ANTHROPIC_API_KEY)
 uv run village ask "Did any agent submit made-up scores during the novel research goal?"
 uv run village eval                                          # grade the agent on questions with known answers
+uv run village web                                           # the same commands in a browser: http://127.0.0.1:8765
 ```
 
 `village -h` lists every command, and `village <command> -h` its options. [USAGE.md](USAGE.md) explains them, the
 rubric format, the eval set and the database schema. All times are Pacific time (the village clock). `village.db`,
-`labels.db` and `evals/runs/` quote the gated dataset and are not part of the repo.
+`labels.db`, `history.jsonl` and `evals/runs/` quote the gated dataset and are not part of the repo.

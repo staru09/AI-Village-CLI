@@ -12,3 +12,4 @@ village.tmp
 # Labels and eval runs quote the gated dataset
 labels.db
 evals/runs/
+history.jsonl

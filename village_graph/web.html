@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>village</title>
+<link rel="icon" href="data:,">
+<style>
+/* Layout: a command bar on top, the result below it, and a side rail with the history and the command list.
+   Colour carries one meaning throughout: green = recorded by the system, amber = an agent's own words. */
+:root {
+  --bg: #f4f6f4; --card: #ffffff; --fg: #1b2420; --muted: #5d6a64; --line: #dbe1dd; --code: #eef2ef; --hover: #e9eeea;
+  --truth: #17795a; --truth-soft: #e1f2ea; --claim: #9a5a00; --claim-soft: #fbefd9; --second: #5d6680; --second-soft: #e8eaf2;
+  --accent: #2b5f8e; --accent-soft: #e3edf6; --err: #b3361f; --err-soft: #fbe9e5; --mark: #ffe58a;
+  --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #111513; --card: #171d1a; --fg: #e2e8e4; --muted: #95a39c; --line: #2a332f; --code: #1d2421; --hover: #202824;
+  --truth: #5cc79f; --truth-soft: #17302a; --claim: #e5a54f; --claim-soft: #33281a; --second: #a5aecb; --second-soft: #23273a;
+  --accent: #82b3e3; --accent-soft: #1b2a3a; --err: #f07f68; --err-soft: #3a1f1a; --mark: #6b5800; color-scheme: dark } }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--body); display: grid; grid-template-columns: 290px minmax(0, 1fr); }
+code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
+a { color: var(--accent); text-decoration: none; cursor: pointer; }
+a:hover { text-decoration: underline; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* side rail */
+aside { border-right: 1px solid var(--line); background: var(--card); display: flex; flex-direction: column; min-height: 0; height: 100vh; position: sticky; top: 0; }
+.brand { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+.brand h1 { margin: 0; font: 600 18px/1.2 var(--mono); letter-spacing: -.01em; }
+.brand p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.rail { overflow-y: auto; flex: 1; min-height: 0; }
+.rail h2 { margin: 0; padding: 12px 16px 6px; font: 600 11px/1 var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+           display: flex; justify-content: space-between; align-items: center; }
+.follow { display: inline-flex; gap: 6px; align-items: center; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 12px; cursor: pointer; }
+.hist { list-style: none; margin: 0; padding: 0 8px 8px; }
+.hist li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; align-items: baseline; }
+.hist li:hover, .hist li.on { background: var(--hover); }
+.hist .src { font: 600 10px/1.6 var(--body); letter-spacing: .04em; text-transform: uppercase; padding: 0 5px; border-radius: 3px; }
+.src.terminal { color: var(--truth); background: var(--truth-soft); }
+.src.web { color: var(--second); background: var(--second-soft); }
+.hist .c { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist .t { grid-column: 2; color: var(--muted); font-size: 11px; }
+.hist .bad .c { color: var(--err); }
+.empty { color: var(--muted); padding: 4px 16px 12px; font-size: 12.5px; }
+.cmds { list-style: none; margin: 0; padding: 0 8px 16px; }
+.cmds li { padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+.cmds li:hover { background: var(--hover); }
+.cmds b { font: 600 12.5px var(--mono); }
+.cmds span { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+
+/* main */
+main { min-width: 0; display: flex; flex-direction: column; }
+.bar { position: sticky; top: 0; z-index: 3; background: var(--bg); border-bottom: 1px solid var(--line); padding: 12px 20px 10px; display: grid; gap: 8px; }
+form { display: flex; gap: 8px; align-items: stretch; }
+.prompt { display: flex; flex: 1; min-width: 0; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding-left: 12px; }
+.prompt:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.prompt label { font: 600 13px var(--mono); color: var(--muted); user-select: none; }
+#cmd { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--fg); font: 13.5px var(--mono); padding: 10px 10px 10px 8px; }
+.go { border: 0; border-radius: 8px; background: var(--accent); color: var(--card); font-weight: 600; padding: 0 18px; }
+.go[disabled] { opacity: .6; cursor: progress; }
+.hint { color: var(--muted); font-size: 12px; min-height: 18px; overflow-wrap: anywhere; }
+.hint code { color: var(--fg); margin-right: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 3px 10px; font: 12px var(--mono); color: var(--fg); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip:hover { border-color: var(--accent); }
+#out { padding: 18px 20px 60px; display: grid; gap: 16px; min-width: 0; }
+.ran { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; color: var(--muted); font-size: 12.5px; }
+.ran code { color: var(--fg); background: var(--code); padding: 2px 7px; border-radius: 5px; overflow-wrap: anywhere; }
+.legend { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; }
+.pill { display: inline-block; font: 600 10.5px/1 var(--body); letter-spacing: .04em; text-transform: uppercase; padding: 3px 6px; border-radius: 4px; white-space: nowrap; vertical-align: 1px; }
+.pill.truth { color: var(--truth); background: var(--truth-soft); }
+.pill.claim { color: var(--claim); background: var(--claim-soft); }
+.pill.second { color: var(--second); background: var(--second-soft); }
+.kind { font-family: var(--mono); font-size: 12px; margin-right: 6px; }
+
+.block { background: var(--card); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.block > h3 { margin: 0; padding: 10px 14px; font: 600 13px/1.4 var(--body); border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { position: sticky; top: 0; text-align: left; font: 600 11px/1.3 var(--body); letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+     padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--card); white-space: nowrap; }
+td { padding: 6px 12px; border-top: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+tr:first-child td { border-top: 0; }
+tbody tr:hover td { background: var(--hover); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.nowrap { white-space: nowrap; }
+td.long { min-width: 320px; }
+td.ref a, a.ref { font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
+.norows { padding: 12px 14px; color: var(--muted); }
+
+.text { padding: 12px 14px; overflow-wrap: anywhere; }
+.text.code .ln { font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; }
+.text.prose .ln { white-space: pre-wrap; max-width: 85ch; }
+.ln.sec { margin: 12px 0 4px; font: 600 11px/1.4 var(--body); letter-spacing: .05em; text-transform: uppercase; white-space: normal; }
+.ln.sec:first-child { margin-top: 0; }
+.ln.sec.truth { color: var(--truth); } .ln.sec.claim { color: var(--claim); } .ln.sec.second { color: var(--second); }
+.ln.head { font-weight: 600; font-family: var(--body); font-size: 13.5px; white-space: normal; }
+.ln.act { display: grid; grid-template-columns: 5.4em 9.6em 3.4em minmax(0, 1fr); gap: 8px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.ln.act.rep { grid-template-columns: 5.4em 9.6em minmax(0, 1fr); }
+.ln.act .tm { color: var(--muted); }
+.ln.act .k { font: 600 10.5px/1.7 var(--body); letter-spacing: .04em; text-transform: uppercase; color: var(--truth); }
+.ln.act .k-chat { color: var(--accent); }
+.ln.act .tx { white-space: pre-wrap; min-width: 0; }
+.ln.out, .ln.fail, .ln.why { padding-left: 2.2em; text-indent: -1.2em; white-space: normal; }
+.ln.sec .detail { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); margin-left: 6px; }
+.ln.out { color: var(--muted); }
+.ln.fail { color: var(--err); }
+.ln.why { color: var(--claim); font-style: italic; }
+.ln.answer { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); font-weight: 600; white-space: normal; }
+.ln.li { padding-left: 1.2em; text-indent: -1.2em; }
+.text.prose code { background: var(--code); padding: 1px 5px; border-radius: 4px; }
+.shot { margin-top: 10px; }
+.shot button { border: 1px solid var(--line); background: var(--card); border-radius: 6px; padding: 5px 10px; }
+.shot img { display: block; max-width: 100%; margin-top: 10px; border: 1px solid var(--line); border-radius: 6px; }
+.note { border: 1px solid var(--line); border-left: 4px solid var(--second); border-radius: 8px; background: var(--card); padding: 9px 14px; color: var(--muted); overflow-wrap: anywhere; }
+.error { border: 1px solid var(--err); background: var(--err-soft); color: var(--err); border-radius: 10px; padding: 12px 14px; white-space: pre-wrap; font-family: var(--mono); font-size: 12.5px; }
+.wait { color: var(--muted); padding: 8px 2px; }
+.cover { color: var(--muted); font-size: 12px; }
+
+@media (max-width: 820px) {
+  body { display: flex; flex-direction: column; }
+  aside { order: 2; position: static; height: auto; border-right: 0; border-top: 1px solid var(--line); }
+  .ln.act, .ln.act.rep { grid-template-columns: 5.4em minmax(0, 1fr); }
+  .ln.act .tx { grid-column: 1 / -1; }
+  .bar { padding-inline: 14px; } #out { padding-inline: 14px; }
+  .legend { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand">
+    <h1>village</h1>
+    <p id="cover" class="cover">AI Village dataset</p>
+  </div>
+  <div class="rail">
+    <h2>Recent runs <label class="follow" title="Show each command you run in the terminal as soon as it finishes"><input type="checkbox" id="follow"> follow terminal</label></h2>
+    <ul class="hist" id="hist"></ul>
+    <div class="empty" id="nohist">Nothing yet. Commands you run here or in the terminal appear in this list.</div>
+    <h2>Commands</h2>
+    <ul class="cmds" id="cmds"></ul>
+  </div>
+</aside>
+<main>
+  <div class="bar">
+    <form id="form" autocomplete="off">
+      <div class="prompt"><label for="cmd">village</label><input id="cmd" spellcheck="false" placeholder='goals    ·    find "random scores" --goal 41    ·    show t:a6924e1133b2' autofocus></div>
+      <button class="go" id="go">Run</button>
+    </form>
+    <div class="hint" id="hint">Scope flags work on every command: <code>--goal N</code> <code>--day N</code> <code>--date YYYY-MM-DD</code> <code>--since</code> <code>--until</code> <code>--limit N</code> <code>--wide</code></div>
+    <div class="chips" id="chips"></div>
+  </div>
+  <div id="out"><div class="wait">Loading…</div></div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const REF = /\b([mtsekr]):([0-9a-f]{12}|toolu_\w+)/g;
+const AGENT_COLS = new Set(['agent', 'speaker', 'partner', 'from', 'to', 'a', 'b', 'by', 'asker']);
+const PROSE = new Set(['ask', 'recap', 'memory', 'look']);
+let META = { commands: [], agents: [], examples: [] }, AGENTS = new Set(), current = '', lastSeen = 0, shownId = null, busy = false;
+
+// The scope of the command on screen is carried into the links it produces, so a click stays inside the same goal or day.
+const scopeOf = cmd => (cmd.match(/--(goal|day|date|since|until)\s+("[^"]*"|\S+)/g) || []).map(s => ' ' + s).join('');
+const refCmd = r => r[0] === 's' ? `session ${r}` : `show ${r} --context 3`;
+const link = (cmd, label, cls = '') => `<a class="${cls}" data-cmd="${esc(cmd)}" title="village ${esc(cmd)}">${label}</a>`;
+
+function rich(text) {  // escaped text with refs as links, «matches» marked and trust tags as pills
+  return esc(text)
+    .replace(REF, m => link(refCmd(m), m, 'ref'))
+    .replace(/«([^»]*)»/g, '<mark>$1</mark>')
+    .replace(/([\w-]+)·(truth|claim)\b/g, (_, k, t) => `<span class="kind">${k}</span><span class="pill ${t}">${t === 'truth' ? 'ground truth' : 'claim'}</span>`)
+    .replace(/SECONDARY SOURCE|SECONDARY/g, '<span class="pill second">secondary</span>');
+}
+const prose = html => html.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/`([^`\n]+)`/g, '<code>$1</code>');
+
+function cell(v, h, title, cmd) {
+  if (v === null || v === undefined || v === '') return '<td></td>';
+  const s = String(v), scope = scopeOf(cmd);
+  if (/^[mtsekr]:([0-9a-f]{12}|toolu_\w+)$/.test(s)) return `<td class="ref">${link(refCmd(s), s)}</td>`;
+  if (AGENT_COLS.has(h) && AGENTS.has(s)) return `<td class="nowrap">${link(`timeline "${s}"${scope}`, esc(s))}</td>`;
+  if (h === 'n' && title.startsWith('village goals')) return `<td class="num">${link(`overview --goal ${s}`, esc(s))}</td>`;
+  if (h === 'rubric') return `<td class="nowrap">${link(`labels ${s}`, esc(s))}</td>`;
+  if (h === 'command' && title.startsWith('the commands it ran')) return `<td class="mono">${link(s.replace(/^village /, ''), esc(s))}</td>`;
+  if (typeof v === 'number' || /^-?[\d,]+(\.\d+)?%?$/.test(s) || /^\d+ \(\d+%\)$/.test(s)) return `<td class="num">${esc(s)}</td>`;
+  if (/^\d{4}-\d\d-\d\d( \d\d:\d\d(:\d\d)?)?$/.test(s) || /^\d\d:\d\d(:\d\d)?$/.test(s)) return `<td class="nowrap mono">${esc(s)}</td>`;
+  return `<td class="${s.length > 90 ? 'long' : s.length < 28 ? 'nowrap' : ''}">${rich(s)}</td>`;
+}
+
+function table(title, headers, rows, cmd) {
+  const numeric = headers.map((_, i) => rows.length && rows.every(r => r[i] === null || r[i] === '' || typeof r[i] === 'number' || /^-?[\d,]+(\.\d+)?%?$/.test(String(r[i]))));
+  return `<section class="block"><h3>${rich(title)}</h3>` + (rows.length ? `<div class="scroll"><table><thead><tr>` +
+    headers.map((h, i) => `<th class="${numeric[i] ? 'num' : ''}">${esc(h)}</th>`).join('') + `</tr></thead><tbody>` +
+    rows.map(r => '<tr>' + r.map((v, i) => cell(v, headers[i], title, cmd)).join('') + '</tr>').join('') + `</tbody></table></div>`
+    : `<div class="norows">No rows.</div>`) + `</section>`;
+}
+
+function textBlock(title, body, cmd) {
+  const isProse = PROSE.has(cmd.trim().split(/\s+/)[0]);
+  const lines = String(body).split('\n').map(l => {
+    const tier = /ground truth/.test(l) ? 'truth' : /claim/.test(l) ? 'claim' : /SECONDARY/.test(l) ? 'second' : '';
+    if (/^\[[^\]]+\]$/.test(l.trim()) && tier) return `<div class="ln sec ${tier}">${esc(l.trim().slice(1, -1))}</div>`;
+    const sec = l.match(/^(VILLAGE GOAL|AGENT GOAL|STATED INTENT|ACTIONS|SELF-REPORT) \((ground truth|claim)(?:[:,] ([^)]*))?\)(?:: (.*))?$/);
+    if (sec) return `<div class="ln sec ${tier}">${esc(sec[1])} <span class="pill ${tier}">${esc(sec[2])}</span>` +
+      (sec[3] ? `<span class="detail">${esc(sec[3])}</span>` : '') + `</div>` + (sec[4] ? `<div class="ln head">${rich(sec[4])}</div>` : '');
+    const act = l.match(/^(\d\d:\d\d:\d\d) ([tek]:\S+) \[(\w+)\] (.*)$/);
+    if (act) return `<div class="ln act"><span class="tm">${act[1]}</span>${link(refCmd(act[2]), act[2], 'ref')}<span class="k k-${act[3]}">${act[3]}</span><span class="tx">${rich(act[4])}</span></div>`;
+    const rep = l.match(/^(\d\d:\d\d:\d\d) ([ek]:\S+) (.*)$/);
+    if (rep) return `<div class="ln act rep"><span class="tm">${rep[1]}</span>${link(refCmd(rep[2]), rep[2], 'ref')}<span class="tx">${rich(rep[3])}</span></div>`;
+    if (/^SESSION [s]:/.test(l)) return `<div class="ln head">${rich(l)}</div>`;
+    if (/^ANSWER:/.test(l)) return `<div class="ln answer">${prose(rich(l))}</div>`;
+    if (/^\s+(->|→)/.test(l)) return `<div class="ln out">${rich(l)}</div>`;
+    if (/^\s+(FAILED|stderr):/.test(l)) return `<div class="ln fail">${rich(l)}</div>`;
+    if (/^\s+\(its reasoning:/.test(l)) return `<div class="ln why">${rich(l)}</div>`;
+    if (/^\[screenshot\]/.test(l)) return '';
+    if (isProse && /^\s*[-*] /.test(l)) return `<div class="ln li">${prose(rich(l.replace(/^(\s*)[-*] /, '$1• ')))}</div>`;
+    if (isProse && /^#{1,4} /.test(l)) return `<div class="ln head">${prose(rich(l.replace(/^#+ /, '')))}</div>`;
+    return `<div class="ln">${isProse ? prose(rich(l)) : rich(l)}</div>`;
+  }).join('');
+  const shot = /^\[screenshot\]/m.test(body) && /^t:/.test(title) ? `<div class="shot"><button data-shot="${esc(title)}">View the screenshot</button></div>` : '';
+  return `<section class="block"><h3>${rich(title)}</h3><div class="text ${isProse ? 'prose' : 'code'}">${lines}${shot}</div></section>`;
+}
+
+function render(rec) {
+  current = rec.cmd || '';
+  const head = `<div class="ran"><span>${rec.source === 'terminal' ? 'Run in the terminal' : 'Ran'}</span><code>village ${esc(current)}</code>` +
+    (rec.secs !== undefined ? `<span>${rec.secs}s</span>` : '') +
+    `<span class="legend"><span><span class="pill truth">ground truth</span> recorded by the system</span><span><span class="pill claim">claim</span> an agent's own words</span></span></div>`;
+  const body = rec.error ? `<div class="error">${esc(rec.error)}</div>` :
+    (rec.blocks || []).map(b => b[0] === 'table' ? table(b[1], b[2], b[3], current) : b[0] === 'text' ? textBlock(b[1], b[2], current) : `<div class="note">${rich(b[1])}</div>`).join('');
+  $('#out').innerHTML = head + (body || '<div class="note">No output.</div>');
+  window.scrollTo(0, 0);
+}
+
+async function run(cmd, push = true) {
+  cmd = cmd.trim().replace(/^village\s+/, '');
+  if (!cmd || busy) return;
+  busy = true; shownId = null;
+  $('#cmd').value = cmd; $('#go').disabled = true;
+  if (push && decodeURIComponent(location.hash.slice(1)) !== cmd) history.pushState(null, '', '#' + encodeURIComponent(cmd));
+  const t0 = Date.now(), slow = /^(ask|label|look|check)\b/.test(cmd);
+  const tick = setInterval(() => { $('#out').innerHTML = `<div class="wait">Running <code>village ${esc(cmd)}</code> … ${Math.round((Date.now() - t0) / 1000)}s${slow ? ' (this one calls a model and can take a minute)' : ''}</div>`; }, 250);
+  try {
+    const rec = await (await fetch('/api/run?cmd=' + encodeURIComponent(cmd))).json();
+    shownId = rec.id; lastSeen = Math.max(lastSeen, rec.id || 0);
+    render(rec);
+  } catch (e) {
+    render({ cmd, error: 'The server did not answer: is `village web` still running?' });
+  } finally {
+    clearInterval(tick); busy = false; $('#go').disabled = false; refresh(false);
+  }
+}
+
+async function showRun(id) {  // a remembered run, as it was: nothing is run again
+  const rec = await (await fetch('/api/history?id=' + id)).json();
+  shownId = id; $('#cmd').value = rec.cmd || ''; render(rec); paint();
+}
+
+const ago = id => { const s = Date.now() / 1000 - id; return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
+let runs = [];
+function paint() {
+  $('#nohist').hidden = runs.length > 0;
+  const seen = runs.filter((r, i) => !i || r.cmd !== runs[i - 1].cmd || r.source !== runs[i - 1].source);  // a rerun shows once
+  $('#hist').innerHTML = seen.slice(0, 60).map(r => `<li data-id="${r.id}" class="${r.id === shownId ? 'on' : ''} ${r.error ? 'bad' : ''}" title="village ${esc(r.cmd)}">
+    <span class="src ${r.source}">${r.source === 'terminal' ? 'term' : 'web'}</span><span class="c">${esc(r.cmd)}</span><span class="t">${ago(r.id)} · ${r.secs}s</span></li>`).join('');
+}
+async function refresh(follow = true) {
+  try { runs = await (await fetch('/api/history')).json(); } catch (e) { return; }
+  const newest = runs.find(r => r.source === 'terminal');
+  if (follow && $('#follow').checked && newest && newest.id > lastSeen && !busy) { lastSeen = newest.id; await showRun(newest.id); }
+  lastSeen = Math.max(lastSeen, ...runs.map(r => r.id), 0);
+  paint();
+}
+
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-cmd]');
+  if (a) { e.preventDefault(); return run(a.dataset.cmd); }
+  const li = e.target.closest('.hist li');
+  if (li) return showRun(Number(li.dataset.id));
+  const c = e.target.closest('.cmds li');
+  if (c) {
+    const d = META.commands.find(x => x.name === c.dataset.name);
+    $('#cmd').value = d.name + ' '; $('#cmd').focus();
+    $('#hint').innerHTML = `<code>village ${esc(d.name)} ${esc(d.args)}</code> — ${esc(d.help)}`;
+    return;
+  }
+  const s = e.target.closest('[data-shot]');
+  if (s) {
+    const img = new Image();
+    img.alt = 'The screen at this action';
+    img.onerror = () => { s.parentNode.innerHTML = '<span class="cover">No screenshot is available for this action (the day\'s image archive may not be downloaded).</span>'; };
+    img.src = '/shot/' + encodeURIComponent(s.dataset.shot) + '.png';
+    s.replaceWith(img);
+  }
+});
+$('#form').addEventListener('submit', e => { e.preventDefault(); run($('#cmd').value); });
+$('#cmd').addEventListener('input', () => {
+  const d = META.commands.find(x => x.name === $('#cmd').value.trim().split(/\s+/)[0]);
+  if (d) $('#hint').innerHTML = `<code>village ${esc(d.name)} ${esc(d.args)}</code> — ${esc(d.help)}`;
+});
+window.addEventListener('popstate', () => { const c = decodeURIComponent(location.hash.slice(1)); if (c) run(c, false); });
+$('#follow').addEventListener('change', () => { try { localStorage.follow = $('#follow').checked ? '1' : ''; } catch (e) {} });
+
+(async () => {
+  try { $('#follow').checked = localStorage.follow !== ''; } catch (e) { $('#follow').checked = true; }
+  try {
+    META = await (await fetch('/api/meta')).json();
+    AGENTS = new Set(META.agents);
+    const c = META.coverage;
+    $('#cover').textContent = `Chat ${c.chat_from.slice(0, 10)} to ${c.chat_to.slice(0, 10)} · actions ${c.actions_from ? c.actions_from.slice(0, 10) + ' to ' + c.actions_to.slice(0, 10) : 'not loaded'} · Pacific time`;
+    $('#cmds').innerHTML = META.commands.map(d => `<li data-name="${esc(d.name)}"><b>${esc(d.name)}</b><span>${esc(d.help)}</span></li>`).join('');
+    $('#chips').innerHTML = META.examples.map(x => `<button class="chip" data-cmd="${esc(x)}" title="village ${esc(x)}">${esc(x)}</button>`).join('');
+  } catch (e) { $('#out').innerHTML = '<div class="error">Could not read the database. Run `village build` first.</div>'; return; }
+  await refresh(false);
+  const first = decodeURIComponent(location.hash.slice(1));
+  run(first || 'goals', false);
+  setInterval(refresh, 2000);
+})();
+</script>
+</body>
+</html>

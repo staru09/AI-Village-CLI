@@ -111,6 +111,24 @@ assert 'not a ref' in cli.run_line('show nonsense') and 'read-only' in cli.run_l
 assert 'is not available here' in cli.run_line('build')
 assert 'Actions, reasoning and memories are loaded only' in cli.run_line('timeline alpha --since 2026-08-01')   # outside the window: say so
 
+# the web page's server: runs a command, remembers it, refuses what is terminal-only
+import contextlib, io, threading, urllib.request
+from http.server import ThreadingHTTPServer
+from village_graph import web
+srv = ThreadingHTTPServer(('127.0.0.1', 0), web.Handler)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+get = lambda path: json.loads(urllib.request.urlopen(f'http://127.0.0.1:{srv.server_port}{path}').read())
+rec = get('/api/run?cmd=find%20random%20--in%20action')
+assert rec['blocks'][0][0] == 'table' and rec['blocks'][0][3][0][1] == 't:000000c90000' and rec['source'] == 'web'
+assert 'not available' in get('/api/run?cmd=build')['error'] and 'not a ref' in get('/api/run?cmd=show%20nope')['error']
+with contextlib.redirect_stdout(io.StringIO()):
+    cli.main(['sessions'])                                                                             # a terminal run is remembered too
+hist = get('/api/history')
+assert [h['source'] for h in hist[:2]] == ['terminal', 'web'] and get(f"/api/history?id={hist[0]['id']}")['blocks'][0][0] == 'table'
+assert {'find', 'ask'} <= {c['name'] for c in get('/api/meta')['commands']} and 'Alpha' in get('/api/meta')['agents']
+assert b'<title>village</title>' in urllib.request.urlopen(f'http://127.0.0.1:{srv.server_port}/').read()
+srv.shutdown()
+
 # the labeller's unit text carries only citable refs; grading rules
 con = core.connect()
 unit = llm.unit_text(con, {'unit': 'session', 'shows': 'full'}, uid(100))

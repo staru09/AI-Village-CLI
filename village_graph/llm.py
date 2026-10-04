@@ -333,20 +333,12 @@ def check(a):
 
 def look(a):
     """A vision model looks at one action's screenshot and answers one question about it."""
-    import tarfile
     con = connect()
     kind, rid = lookup(con, a.ref)
     if kind != 't':
         sys.exit('`look` takes an action ref (t:…).')
     ts, act, agent = con.execute('SELECT ts, action, agent FROM turns WHERE id = ?', (rid,)).fetchone()
-    tar = evidence.images() / f'{ts[:10]}.tar'
-    if not tar.exists():
-        sys.exit(f'{tar} is missing: download images/computer-use-turns/{ts[:10]}.tar from the dataset, or set VILLAGE_IMAGES.')
-    with tarfile.open(tar) as t:
-        try:
-            png = t.extractfile(f'{rid}.png').read()
-        except KeyError:
-            sys.exit(f'{a.ref} has no screenshot (commands and chat-only turns have none).')
+    png = evidence.png(rid, ts)[0]
     cl, model, spend = client(), a.model or ASK_MODEL, Spend()
     resp = cl.messages.create(model=model, max_tokens=4000, messages=[{'role': 'user', 'content': [
         {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/png', 'data': base64.standard_b64encode(png).decode()}},
@@ -360,23 +352,9 @@ def look(a):
 
 def reference():
     """The command list the agent sees, from the parser itself, so it cannot drift from the CLI."""
-    from .cli import parser
-    sub = next(x for x in parser()._actions if x.dest == 'cmd')
-    shared = {'help', 'goal', 'day', 'date', 'since', 'until', 'limit', 'wide', 'json'}
-    out = []
-    for name, p in sub.choices.items():
-        if name in ('build', 'ask', 'eval', 'verdict', 'check'):
-            continue
-        args = []
-        for x in p._actions:
-            if x.dest in shared:
-                continue
-            if not x.option_strings:
-                args.append(f'<{x.metavar or x.dest}>' if x.nargs not in ('?', '*') else f'[{x.metavar or x.dest}]')
-            else:
-                args.append(f'[{x.option_strings[0]}' + ('' if x.nargs == 0 or isinstance(x.const, bool) else f' {(x.metavar or x.dest).upper()}') + ']')
-        out.append(f'{name} {" ".join(args)}\n    {p.description}' + (f' (default limit {p.get_default("limit")})' if 'goal' in {x.dest for x in p._actions} else ''))
-    return '\n'.join(out)
+    from .cli import command_list
+    return '\n'.join(f"{c['name']} {c['args']}\n    {c['help']}" + (f" (default limit {c['limit']})" if c['scoped'] else '')
+                     for c in command_list() if c['name'] not in ('build', 'ask', 'eval', 'verdict', 'check', 'web'))
 
 
 AGENT = '''You answer questions about the AI Village: a long-running experiment by AI Digest in which frontier AI agents (Claude, GPT, Gemini,
@@ -485,6 +463,7 @@ def answer(question, goal=None, model=None, max_steps=40, log=None):
 def ask(a):
     r = answer(a.question, a.goal, a.model, a.max_steps, None if a.quiet else lambda s: print(s, file=sys.stderr, flush=True))
     return [('text', a.question, r['answer']),
+            ('table', 'the commands it ran', ['#', 'command'], [(i + 1, c) for i, c in enumerate(r['commands'])]),
             ('note', f'{r["model"]}: {r["steps"]} commands, {r["spend"]}. Citations: {r["cited"]} refs, ' +
              ('all shown by the tools.' if not r['unknown'] else f'{len(r["unknown"])} NOT shown by any tool result: {", ".join(r["unknown"])}.'))]
 

@@ -1,5 +1,5 @@
 """village: ask the AI Village dataset. `village -h` lists the commands; README.md and USAGE.md explain them."""
-import argparse, io, json, shlex, sys
+import argparse, io, json, shlex, sys, time
 from contextlib import redirect_stderr, redirect_stdout
 
 from . import commands, db, evidence
@@ -7,6 +7,7 @@ from .core import connect
 
 MENTIONS = ('pair', 'neighbors', 'top-pairs', 'hubs', 'agents', 'examples', 'ignored', 'replies')
 LLM = ('label', 'labels', 'verdict', 'check', 'look', 'ask', 'eval')
+SPENDS = ('label', 'check', 'look', 'ask', 'eval')  # these call a model: they cost money
 EPILOG = '''Start with `goals`, then `overview --goal N`. Every row has a ref (m: chat, t: action, s: session, e: event, k: memory,
 r: recap): open it with `show REF`. Trust: actions, outputs, errors and events are recorded by the system (ground truth);
 chat, reasoning, session goals and memories are the agents' own words (claims); recaps are secondary. Times are Pacific.'''
@@ -144,7 +145,30 @@ def parser():
     p.add_argument('--model')
     p.add_argument('--agent-cmd', help='grade another agent instead: a shell command with {question} in it that prints the answer')
     p.add_argument('--jobs', type=int, default=3)
+    p = add('web', 'the same commands in a browser: type one, or follow what you run in the terminal', parents=())
+    p.add_argument('--host', default='127.0.0.1')
+    p.add_argument('--port', type=int, default=8765)
+    p.add_argument('--llm', action='store_true', help='let the page run commands that call a model, even when --host is not local')
     return ap
+
+
+def command_list():
+    """Every command with its own arguments and help, from the parser itself (for the agent's prompt and the web page)."""
+    sub = next(x for x in parser()._actions if x.dest == 'cmd')
+    shared = {'help', 'goal', 'day', 'date', 'since', 'until', 'limit', 'wide', 'json'}
+    out = []
+    for name, p in sub.choices.items():
+        args = []
+        for x in p._actions:
+            if x.dest in shared:
+                continue
+            if not x.option_strings:
+                args.append(f'<{x.metavar or x.dest}>' if x.nargs not in ('?', '*') else f'[{x.metavar or x.dest}]')
+            else:
+                args.append(f'[{x.option_strings[0]}' + ('' if x.nargs == 0 else f' {(x.metavar or x.dest).upper()}') + ']')
+        out.append({'name': name, 'args': ' '.join(args), 'help': p.description, 'scoped': 'goal' in {x.dest for x in p._actions},
+                    'limit': p.get_default('limit')})
+    return out
 
 
 def render(blocks, wide=False):
@@ -175,26 +199,37 @@ def run(a):
         con.close()
 
 
-def run_line(line):
-    """A command line as text -> its rendered output. Never raises: errors come back as text (for the agent)."""
+def run_cmd(line, deny=()):
+    """A command line as text -> (blocks, error text). Never raises: a wrong command is an answer, not a crash."""
     err = io.StringIO()
     try:
         with redirect_stderr(err), redirect_stdout(err):
             a = parser().parse_args(shlex.split(line))
-            if a.cmd in ('build', 'ask', 'eval', 'verdict', 'check'):
-                return f'`{a.cmd}` is not available here.'
-            return render(run(a))
+            if a.cmd in deny:
+                return None, f'`{a.cmd}` is not available here.'
+            return run(a), None
     except SystemExit as e:
-        return (err.getvalue().strip() or str(e.code if isinstance(e.code, str) else '')).strip() or 'error'
-    except Exception as e:  # a tool result, not a crash
-        return f'error: {type(e).__name__}: {e}'
+        return None, (err.getvalue().strip() or str(e.code if isinstance(e.code, str) else '')).strip() or 'error'
+    except Exception as e:
+        return None, f'error: {type(e).__name__}: {e}'
+
+
+def run_line(line):
+    """A command line -> its output as text, for the agent."""
+    blocks, err = run_cmd(line, deny=('build', 'ask', 'eval', 'verdict', 'check', 'web'))
+    return err if blocks is None else render(blocks)
 
 
 def main(argv=None):
     a = parser().parse_args(argv)
     if a.cmd == 'build':
         return db.build(a.days, a.goal, a.since, a.until, a.all)
+    from . import web
+    if a.cmd == 'web':
+        return web.serve(a.host, a.port, a.llm)
+    t = time.time()
     blocks = run(a)
+    web.remember(shlex.join(sys.argv[1:] if argv is None else argv), blocks, time.time() - t, 'terminal')  # the page can follow the terminal
     if getattr(a, 'json', False):
         return print(json.dumps([dict(zip(('type', 'title', 'headers', 'rows') if b[0] == 'table' else ('type', 'title', 'text') if b[0] == 'text'
                                           else ('type', 'text'), b)) for b in blocks], ensure_ascii=False, indent=1))
