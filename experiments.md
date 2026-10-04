@@ -12,7 +12,7 @@ How to read an entry: **Question** (what we wanted to know), **Run** (the comman
 
 ## Learnings so far
 
-What the experiments below have taught us, with the entry each one comes from. Updated 2026-10-04 after E18 and E19.
+What the experiments below have taught us, with the entry each one comes from. Updated 2026-10-04 after E24.
 
 ### About the data
 - **A claim is only checkable next to the command behind it.** Every serious failure we found came from putting what
@@ -55,6 +55,16 @@ What the experiments below have taught us, with the entry each one comes from. U
   of flagged sessions found its invented incident records. None of this measures recall (E18, E19).
 - **"It never happened" is only as strong as the searches behind it.** Keep the list of searches with their hit counts
   next to the answer (E18, `q2_coercion`: 57 searches).
+- **Our harness beats a read-everything pipeline on open questions** (E22): more accurate on 7 of 10, at 3.5 times
+  less cost ($8.85 against $30.83). Search-then-read spends tokens only where the evidence is; DocETL's map read
+  6.9M tokens for every run. But both are weak on long "find all the failures" questions (mean "correct" 5.5 and 4.6).
+- **The harness stops short on scope.** In E21 it found the right incident but covered one day of two (D1), or the
+  right pair but the wrong unit and reading (S1). Its citations held in every run (E21, E22): no ref it had not seen.
+- **An LLM judge sees only the truth it is given.** In E22 it scored a true finding as unsupported because that fact
+  sat in a different ground-truth file. Give the judge every verified fact on the topic, or read its losses by hand.
+- **DocETL fails expensively in two ways** (E22): a reduce key written by the model as free text (1,763 groups instead
+  of 10, $51 of Opus), and one refused group aborting the whole step and discarding the finished answers. Key groups
+  by code, and set `skip_on_error` with a fallback model.
 - **One question, one investigator, one shared brief** worked: 14 questions in parallel, each about 20 minutes, with
   the same evidence rules and the same output shape, so one script could check them all (E18).
 - **Cost notes.** Prompt caching cut a question from $1.61 to $0.08–0.16 (E3). DocETL gave the same labels at 1.4 to
@@ -77,6 +87,10 @@ What the experiments below have taught us, with the entry each one comes from. U
 
 ### Still open
 - Round 2 of ground truth (the cross-cutting and character questions) was started and stopped (E20): no answers yet.
+- The Ask AI button (E23) is not deployed: it needs a login or rate limit, and a start-then-poll endpoint for answers
+  longer than Cloudflare's ~100 s.
+- Harness quality: mean "correct" 5.5 of 10 on the E22 questions. Next step is to read its weakest answers (s2, s3)
+  and see which commands it did not run.
 - The 80 verdicts of E19 should become test cases for a reworded `made_up_data` rubric.
 - The E18 answers go into `evals/questions.json` only after they are reviewed.
 - "Best leader" and "best follower" still lack a measure of whether an assignment caused the work.
@@ -85,6 +99,84 @@ What the experiments below have taught us, with the entry each one comes from. U
 ---
 
 ## 2026-10-04
+
+### E24. The database with every goal loaded, for the Ask AI button (in progress)
+- **Why:** the database behind `village web` had actions, reasoning and memories for goal 41 only, so a question about
+  any other goal would rest on chat alone. Building everything once means no build when a user picks a goal.
+- **Run:** `VILLAGE_DATA=/data/ai-village-tables VILLAGE_DB=village_all.db village build --all`, started 14:28 on
+  2026-10-04. It writes `village_all.tmp` and renames it only when complete. Then `village.db` (goal 41 only) is kept
+  as `village_goal41.db` and the full build takes its name. `village web` opens the file per request, so it needs no
+  restart.
+- **Expected:** about an hour (the tool's own estimate); 4 GB written in the first 5 minutes. Raw input: 2.4 GB of
+  computer-use turns and 2.3 GB of memories (gzipped). Free disk: 283 GB.
+- **Result:** to be filled in when the build finishes: size, time, and the time of a few commands and one question
+  on goals other than 41.
+
+### E23. The 🔎 Ask AI button in the village site (AI-village-3D, branch `experiment-only`)
+- **What:** a header button opens a dialog: pick a goal (it starts on the goal being watched), ask a question.
+  `frontend/ask.js` sends `ask "<question>" --goal "<goal>"` to `village web` (`/api/run`), which Caddy proxies at
+  `/api/` (one line in `deploy/Caddyfile`), and shows the answer, the model, the number of commands, the cost and the
+  time. No change to the CLI was needed. No login or rate limit (as asked).
+- **Check:** a local Caddy on port 8772 serving the branch, with a headless browser on desktop and phone. One real
+  question on goal 41: "How many agents took part in this goal, and in which two rooms?" Answer: 15 agents, #rest and
+  #best, in 17 s, 4 commands, $0.05, 0 refs cited (it used summary tables only). On phones the button first pushed the
+  ⓘ button off screen; moved it beside 📊.
+- **Known limits:** anyone who can open the site can spend API credit. Cloudflare's tunnel ends a request at about
+  100 s, and hard questions take 1 to 12 minutes (E22), so those will fail until the endpoint becomes start-then-poll.
+  Not deployed.
+- **Where:** AI-village-3D commit `d14aa4d` on `experiment-only`; todo item 9.16.
+
+### E22. Our harness against a DocETL pipeline on 10 ground-truth questions, judged blind by GPT-6.1
+- **Question:** on the questions from E18, does our harness (`village ask`) or a DocETL pipeline give the more accurate
+  answer, and at what cost?
+- **Run:** `evals/harness_vs_docetl.py` (`harness`, `docetl`, `docetl-reduce`, `judge`, `report`).
+  - 10 questions: q1a, q1b, q2, q3, q4, s2, s3, m1, m2, m3. The truth for each is the `answer` of its E18 file.
+  - **Harness:** Claude Opus 5.5 with the `village` tool, 5 questions at a time.
+  - **DocETL:** it has no search tool, so it reads the whole goal: 1,059 units (1,014 sessions of up to 16,000
+    characters plus the chat in one-hour blocks). One map with Claude Haiku 4.5 notes evidence for all 10 questions at
+    once; one reduce per question with Claude Opus 5.5 writes the answer.
+  - **Judge:** `gpt-6.1-sol` (OpenAI API) sees the question, the truth and both answers, blind, in a seeded random
+    order. It scores each 0–10 on correct, no errors, complete and evidence, and names the more accurate answer.
+- **Result:**
+
+  | | Harness | DocETL |
+  |---|---|---|
+  | More accurate (judge) | 7 of 10 | 3 of 10 (q2, m1, m3) |
+  | Mean score: correct / no errors / complete / evidence | 5.5 / 5.0 / 5.0 / 8.0 | 4.6 / 4.0 / 4.8 / 7.7 |
+  | Cost | $8.85 | $30.83 ($21.04 map + $9.79 reduce) |
+  | Time | 12.7 min | about 13 min (map) + 2 min (reduce) |
+
+  - **Neither is good.** Mean "correct" is 5.5 and 4.6 out of 10. On the long questions both find some incidents and
+    miss others: s2 scored 4/3/2 and 3/2/3.
+  - **The harness's citations all held:** every answer ended normally, and none cited a ref its tools had not shown
+    (10 to 34 refs per answer).
+  - **One verdict is the judge's error:** on q2 it marked the harness's "second fabrication labelled as genuine" as
+    unsupported, but that is Gemini 3.1 Pro's 13:53 PT "native" scores, verified in `q1a`. The judge sees only each
+    question's own truth. Order did not drive the verdicts (the answer shown first won 3 of 10).
+- **Cost of mistakes:** $81.98 was spent on DocETL in all, not $30.83.
+  - **My bug:** the map wrote the question label as free text, so the reduce grouped 1,763 labels instead of 10 and
+    ran 1,763 Opus calls ($51). Fixed with a `code_map` that keys each note by its id. The rerun used the cached map.
+  - **A refusal:** in the first rerun, Claude's safety filter refused one group (`content_filter`) and DocETL aborted
+    the whole step, keeping none of the 8 answers already written; its cost was not reported. Now `skip_on_error`
+    is on, with Claude Sonnet 5.5 as the fallback for a refused group, as in our harness. The second rerun needed no
+    fallback.
+  - **The judge:** 44k tokens in and 5k out, not priced here.
+- **Verdict:** keep the harness for questions. DocETL's read-everything design costs 3.5 times as much per run here,
+  and was less accurate on 7 of 10 questions.
+- **Where:** `evals/harness_vs_docetl.py` (branch `experiments`); outputs in `evals/ground_truth/compare/` (git-ignored), including
+  `results.json` with every answer, score, verdict and cost.
+
+### E21. `village eval` on 5 questions from the new ground truth
+- **Run:** 5 questions written from the E18 files (`evals/ground_truth/questions.json`, git-ignored), each checked by
+  rule, then by a judge model (Claude Opus 5.5). This was the first run after three small changes:
+  - `made_up_data` now leaves an agent's own judgements, copied numbers and memory notes alone;
+  - the agent prompt names three data traps;
+  - eval runs now save the citation counts.
+- **Result:** 3 of 5 passed (D2 Gemini's other script graders, D3 no coercion, S2 the 8,424-word claim); about $1.40.
+  D1 failed: it covered only the replication wave and said it could not check the main study. S1 failed: it named the
+  right pair but counted 23 messages rather than about 8 episodes, and called it a clash between makers. No answer cited
+  a ref its tools had not shown.
+- **Verdict:** the harness finds the incident but stops short on scope (one day of two) and on interpretation.
 
 ### E20. Round 2 of ground truth (cross-cutting and character questions): started, then stopped
 - **Question:** the research list's "Quantitative / cross-cutting" questions (over-reporting, credit and blame, model
