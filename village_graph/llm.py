@@ -385,7 +385,9 @@ EVIDENCE
 - Reasoning is missing or only summarised for some models (see the reasoning column in `overview`): no reasoning is not evidence of innocence.
 - A `labels` count is a model's judgement under a rubric: name the rubric and say so. A `count` is a rule: say so.
 - A cause or an intent that no record states is your interpretation: mark it as one.
-- If the scope has no actions loaded, say that the answer rests on chat only.
+- If the scope has no actions loaded, say that the answer rests on chat only. Actions exist only for 10:00-14:00 Pacific time each day.
+- Mention commands only see full names: many messages name a peer as "Gemini", "Claude" or "Kimi". Search the text too.
+- Agents misstate their own day numbers and totals: compute days from dates and totals from the records, not from their words.
 
 ANSWER
 - Short and direct: the answer first, then the evidence. Plain English, for a reader who cannot see the tool output.
@@ -535,7 +537,7 @@ def eval(a):  # noqa: A001 (the command's name)
     runs.mkdir(exist_ok=True)
     out = runs / f'{datetime.now():%Y%m%d-%H%M%S}.json'
     out.write_text(json.dumps([{'id': q['id'], 'pass': ok, 'why': why, 'seconds': round(s), 'usd': round(r['spend'].usd, 3) if r['spend'] else None,
-                                'model': r.get('model'), 'commands': r['commands'], 'answer': r['answer'], 'truth': q['truth']} for q, r, ok, why, s in done], ensure_ascii=False, indent=1))
+                                'model': r.get('model'), 'steps': r['steps'], 'cited': r.get('cited', 0), 'unknown_refs': r.get('unknown', []), 'commands': r['commands'], 'answer': r['answer'], 'truth': q['truth']} for q, r, ok, why, s in done], ensure_ascii=False, indent=1))
     kinds = {}
     for q, r, ok, why, s in done:
         kinds.setdefault(q.get('kind', 'other'), []).append(ok)
