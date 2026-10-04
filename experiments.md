@@ -100,17 +100,33 @@ What the experiments below have taught us, with the entry each one comes from. U
 
 ## 2026-10-04
 
-### E24. The database with every goal loaded, for the Ask AI button (in progress)
+### E24. The database with every goal loaded, for the Ask AI button
 - **Why:** the database behind `village web` had actions, reasoning and memories for goal 41 only, so a question about
-  any other goal would rest on chat alone. Building everything once means no build when a user picks a goal.
-- **Run:** `VILLAGE_DATA=/data/ai-village-tables VILLAGE_DB=village_all.db village build --all`, started 14:28 on
-  2026-10-04. It writes `village_all.tmp` and renames it only when complete. Then `village.db` (goal 41 only) is kept
-  as `village_goal41.db` and the full build takes its name. `village web` opens the file per request, so it needs no
-  restart.
-- **Expected:** about an hour (the tool's own estimate); 4 GB written in the first 5 minutes. Raw input: 2.4 GB of
-  computer-use turns and 2.3 GB of memories (gzipped). Free disk: 283 GB.
-- **Result:** to be filled in when the build finishes: size, time, and the time of a few commands and one question
-  on goals other than 41.
+  any other goal rested on chat alone. Building everything once means no build when a user picks a goal.
+- **Run:** `VILLAGE_DATA=/data/ai-village-tables VILLAGE_DB=village_all.db village build --all`, from 14:28 on
+  2026-10-04. It writes `village_all.tmp` and renames it only when complete. It reads the raw tables and writes nothing
+  else: the village site's own data (`/data/AI-village-3D/data`, from `extract.py`) does not use this database.
+- **Result:** 28.5 min, peak memory 3.6 GB, 10.1 GB on disk. 2,582,712 actions and 246,151 memory versions, from
+  2 Apr 2025 to 18 Sep 2026; chat, sessions (78,364) and events cover the whole history as before.
+- **Speed** (same commands, old file against new):
+
+  | Command | Goal-41 file | Full file, cold | Full file, in memory |
+  |---|---|---|---|
+  | `overview --goal 41` | 0.2 s | 27 s | 0.2 s |
+  | `overview --goal 46` | 0.1 s (chat only) | over 30 s: hit the query limit | 1.8 s |
+  | `find "error" --goal 46 --in output` | 0.1 s (no actions, nothing found) | 26 s | 1.2 s |
+  | other commands tried | 0.1–0.2 s | | 0.1–0.4 s |
+
+  Reading the whole file into the page cache takes 35 s (`cat village.db > /dev/null`). The machine has 15 GB of RAM,
+  so after a reboot or under memory pressure the first queries are slow again.
+- **Swap:** `village.db` (goal 41 only) is kept as `village_goal41.db`; the full build is now `village.db`. Roll back
+  by renaming the two. `labels.db` stays valid (same record ids).
+- **Check:** one Ask AI question on the chess goal (goal 23) through `/api/run`: "Which agent ran the most bash
+  commands?" Answer: DeepSeek-V3.2, 3,138, in 20 s for $0.06; a direct SQL count gives 3,138.
+- **A prompt fix it exposed:** the answer said actions exist only 10:00–14:00 PT, a line I had added to the agent
+  prompt from goal 41. Over the full history the hours changed (about 11:00–13:30 in spring 2025, 10:00–13:00 in
+  mid-2025, 10:00–14:00 to May 2026, 09:00–17:00 from June 2026). The prompt now says so and tells the agent to check;
+  `village web` was restarted to load it (commit `05b0c38`).
 
 ### E23. The 🔎 Ask AI button in the village site (AI-village-3D, branch `experiment-only`)
 - **What:** a header button opens a dialog: pick a goal (it starts on the goal being watched), ask a question.
