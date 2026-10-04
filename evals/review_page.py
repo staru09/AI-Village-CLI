@@ -202,6 +202,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .summary { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
 .summary td:first-child { white-space: nowrap; }
 .keybox { border: 2px solid #c99a00; }
+.copybox { display: grid; gap: 8px; padding: 12px 14px; background: var(--accent-soft); border-radius: 8px; } .copybox p { max-width: 82ch; } .copybox .btn { justify-self: start; }
 .keybox .hl { display: grid; gap: 8px; } .keybox .hl > p { color: var(--muted); max-width: 82ch; }
 .keybox ol { margin: 0; padding-left: 1.4em; display: grid; gap: 12px; } .keybox ol ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
 .keybox a.claim { color: var(--fg); font-weight: 500; }
@@ -265,6 +266,11 @@ document.addEventListener('click', function (e) {
   var b = e.target.closest('.btn'); if (!b) return;
   var on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on ? 'true' : 'false');
   if (b.id === 'b-bad') document.body.classList.toggle('only-bad', on);
+  if (b.id === 'b-copy') { var t = document.getElementById('summary'), r = document.createRange(); r.selectNodeContents(t);
+    var sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    (navigator.clipboard ? navigator.clipboard.writeText(t.textContent) : Promise.reject()).then(function () { b.textContent = 'Copied'; },
+      function () { try { document.execCommand('copy'); b.textContent = 'Copied'; } catch (e) { b.textContent = 'Selected: press Ctrl+C'; } });
+    b.setAttribute('aria-pressed', 'false'); return; }
   if (b.id === 'b-open') document.querySelectorAll('details.cites').forEach(function (d) { d.open = on; });
 });
 '''
@@ -322,6 +328,10 @@ def highlights_section(path, items):
     data = {k: d for k, d in items}
     out = ''
     for h in json.loads(Path(path).read_text()):
+        if 'summary' in h:  # one paragraph to copy into a post or an email
+            out += (f'<div class="copybox"><div class="label">In one paragraph</div><p id="summary">{E(h["summary"])}</p>'
+                    '<button class="btn" id="b-copy" aria-pressed="false">Copy paragraph</button></div>')
+            continue
         rows = ''
         for fid in h['findings']:
             key, n = fid.rsplit('-', 1)
