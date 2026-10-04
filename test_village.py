@@ -140,6 +140,21 @@ unit = llm.unit_text(con, {'unit': 'session', 'shows': 'full'}, uid(100))
 assert llm.refs_in(unit) >= {'s:000000640000', 't:000000c90000', 'e:0000012c0000', 'k:000001900000'}
 assert 'ACTIONS' not in llm.unit_text(con, {'unit': 'session', 'shows': 'intent'}, uid(100))
 assert 'THE MESSAGE TO LABEL · m:000000050000' in llm.unit_text(con, {'unit': 'message', 'context': '2'}, uid(5))
+# ground-truth files: a quote is checked against the record it cites, and the review page shows the miss
+import sys
+sys.path.insert(0, str(Path(__file__).parent / 'evals'))
+import check_citations, review_page
+gt = db.DB.parent / 'gt.json'
+gt.write_text(json.dumps({'question': 'Q?', 'answer': 'A.', 'confidence': 'high', 'findings': [
+    {'claim': 'scores came from a script', 'kind': 'ground truth', 'citations': [{'ref': 't:000000c90000', 'field': 'action', 'quote': 'random.randint(7,  10)'}]},
+    {'claim': 'it was read by hand', 'kind': 'claim', 'citations': [{'ref': 't:000000c90000', 'field': 'action', 'quote': 'scored by hand'}]}]}))
+with contextlib.redirect_stdout(io.StringIO()):
+    assert not check_citations.check(con, gt)
+assert [f['verified'] for f in json.loads(gt.read_text())['findings']] == [True, False]
+sys.argv = ['review_page', str(db.DB.parent / 'gt.html'), f'Group={gt}']
+with contextlib.redirect_stdout(io.StringIO()):
+    review_page.main()
+assert 'quote NOT found in the record' in (db.DB.parent / 'gt.html').read_text()
 con.close()
 g = lambda check, text: llm.grade(None, {'check': check, 'question': '', 'truth': ''}, text, None)[0]
 assert g({'number': 22}, 'It ran many.\nANSWER: 22 sessions') and not g({'number': 22}, 'ANSWER: 21 sessions [t:000000c90000]')

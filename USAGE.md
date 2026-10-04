@@ -193,6 +193,21 @@ model's private reasoning, before any command runs. Ask what the agent did or sa
 A question is `{id, kind, question, truth, source}` plus `check` (`number` with optional `tol`, `all`, `any`, `none`:
 regular expressions) and/or `"judge": true`. Add your own the same way.
 
+### Ground truth with citations
+
+For questions that need reading, not counting, an answer is a JSON file: `question`, `answer`, `reasoning`, `findings`
+(each a `claim`, its `kind`: ground truth, claim or interpretation, and `citations` of `{ref, field, quote}`),
+`searches`, `could_not_check`, `confidence`. `evals/investigation_brief.md` is the brief given to each investigator.
+
+```bash
+python3 evals/check_citations.py evals/ground_truth/*.json     # is each quote in the record it cites? writes quote_ok
+python3 evals/review_page.py review.html "Group name"=evals/ground_truth/q2_coercion.json …   # one page to review
+python3 evals/peer_matrix.py                                   # who praises, criticises, asks and defers to whom
+```
+
+A quote that is found proves the words are in that record, not that the reading of them is right. The files in
+`evals/ground_truth/` quote the gated dataset and are not part of the repo.
+
 ## Database
 
 `village.db` (see `village schema` for the live list). Times are Pacific. `agent`, `src` and `dst` hold `nodes.id`.

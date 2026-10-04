@@ -109,4 +109,4 @@ uv run village web                                           # the same commands
 
 `village -h` lists every command, and `village <command> -h` its options. [USAGE.md](USAGE.md) explains them, the
 rubric format, the eval set and the database schema. All times are Pacific time (the village clock). `village.db`,
-`labels.db`, `history.jsonl` and `evals/runs/` quote the gated dataset and are not part of the repo.
+`labels.db`, `history.jsonl`, `evals/runs/` and `evals/ground_truth/` quote the gated dataset and are not part of the repo.
