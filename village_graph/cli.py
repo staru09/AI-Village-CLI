@@ -7,7 +7,7 @@ from .core import connect
 
 MENTIONS = ('pair', 'neighbors', 'top-pairs', 'hubs', 'families', 'agents', 'examples', 'ignored', 'replies')
 LLM = ('label', 'labels', 'verdict', 'check', 'look', 'ask', 'eval')
-SPENDS = ('label', 'check', 'look', 'ask', 'eval')  # these call a model: they cost money
+SPENDS = ('label', 'check', 'look', 'ask', 'rlm', 'eval')  # these call a model: they cost money
 EPILOG = '''Start with `goals`, then `overview --goal N`. Every row has a ref (m: chat, t: action, s: session, e: event, k: memory,
 r: recap): open it with `show REF`. Trust: actions, outputs, errors and events are recorded by the system (ground truth);
 chat, reasoning, session goals and memories are the agents' own words (claims); recaps are secondary. Times are Pacific.'''
@@ -137,6 +137,15 @@ def parser():
     p.add_argument('--model', help='default: $VILLAGE_ASK_MODEL or claude-opus-5-5')
     p.add_argument('--max-steps', type=int, default=40)
     p.add_argument('--quiet', action='store_true', help="don't print each command as it runs")
+    p = add('rlm', 'a whole-scope question answered by a Recursive Language Model: the records stay in a sandboxed REPL, not in the prompt')
+    p.add_argument('question')
+    p.add_argument('--no-actions', action='store_true', help='leave the computer actions out of the context (chat and sessions only)')
+    p.add_argument('--model', help='root model (default: $VILLAGE_RLM_MODEL or claude-sonnet-5-5)')
+    p.add_argument('--sub-model', help='model for sub-calls (default: $VILLAGE_RLM_SUB_MODEL or claude-haiku-4-5)')
+    p.add_argument('--env', choices=['docker', 'local'], default='docker', help='where the model-written code runs (default docker)')
+    p.add_argument('--unsafe', action='store_true', help='allow --env local')
+    p.add_argument('--max-steps', type=int, default=25)
+    p.add_argument('--quiet', action='store_true', help="don't print progress")
     p = add('eval', 'run the agent on questions with known answers and grade it', scoped=False)
     p.add_argument('file', nargs='?', default='evals/questions.json')
     p.add_argument('--ids', help='only these question ids, comma-separated')
@@ -187,6 +196,9 @@ def render(blocks, wide=False):
 
 def run(a):
     """A parsed command -> blocks: ('table', title, headers, rows) | ('text', title, body) | ('note', text)."""
+    if a.cmd == 'rlm':
+        from . import rlm_run
+        return rlm_run.rlm(a)
     if a.cmd in LLM:
         from . import llm
         return getattr(llm, a.cmd)(a)
@@ -214,7 +226,7 @@ def run_cmd(line, deny=()):
 
 def run_line(line):
     """A command line -> its output as text, for the agent."""
-    blocks, err = run_cmd(line, deny=('build', 'ask', 'eval', 'verdict', 'check', 'web'))
+    blocks, err = run_cmd(line, deny=('build', 'ask', 'rlm', 'eval', 'verdict', 'check', 'web'))
     return err if blocks is None else render(blocks)
 
 

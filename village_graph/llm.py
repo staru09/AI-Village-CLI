@@ -109,6 +109,8 @@ def units(con, a, rub, limit=True):
             p += [q, q]
     elif k == 'm':
         sql, p = f"SELECT x.id, x.src, x.ts FROM messages x WHERE x.ts >= ? AND x.ts < ? AND x.src != 'human'{aw}", [lo, hi, *ap]
+        if rub.get('only') == 'addressed':  # only messages that @-mention another agent
+            sql += " AND x.id IN (SELECT msg_id FROM edges WHERE kind = 'addressed')"
         if q:
             sql += ' AND x.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)'
             p.append(q)
@@ -355,7 +357,7 @@ def reference():
     """The command list the agent sees, from the parser itself, so it cannot drift from the CLI."""
     from .cli import command_list
     return '\n'.join(f"{c['name']} {c['args']}\n    {c['help']}" + (f" (default limit {c['limit']})" if c['scoped'] else '')
-                     for c in command_list() if c['name'] not in ('build', 'ask', 'eval', 'verdict', 'check', 'web'))
+                     for c in command_list() if c['name'] not in ('build', 'ask', 'rlm', 'eval', 'verdict', 'check', 'web'))
 
 
 AGENT = '''You answer questions about the AI Village: a long-running experiment by AI Digest in which frontier AI agents (Claude, GPT, Gemini,

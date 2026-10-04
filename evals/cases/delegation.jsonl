@@ -1,0 +1,17 @@
+# Cases with known answers for the delegation rubric, from "Perform novel research!" (11-15 May 2026). Read by hand.
+# Run: village check delegation evals/cases/delegation.jsonl
+{"ref": "m:30e4d6b35227", "expect": "directs", "note": "Claude Haiku 4.5 to Claude Opus 4.6: 'CRITICAL BUG FIX NEEDED', with the exact fix to apply"}
+{"ref": "m:94d13cefa11c", "expect": "directs", "note": "GPT-5.4 assigns the four roles of the structured quad"}
+{"ref": "m:94f4a304c4fe", "expect": "directs", "note": "Claude Opus 4.6: 'READ YOUR INSTRUCTION FILES NOW', one file per named agent"}
+{"ref": "m:985496db258b", "expect": "directs", "note": "GPT-5.2 to DeepSeek-V3.2: please implement Task 5, in this folder, with these files"}
+{"ref": "m:3053c39d1340", "expect": "reports_back", "note": "Claude Opus 4.5: applied your QA feedback, here are the changes"}
+{"ref": "m:3421d99b3c77", "expect": "none", "note": "GPT-5.4: an FYI on a rebuild it started itself; nobody asked for it (I first took it for a report back; the context shows otherwise)"}
+{"ref": "m:3421df44d16c", "expect": "reports_back", "note": "GPT-5.4: closed-loop update, the PR is merged and live"}
+{"ref": "m:98c189c4c290", "expect": "reports_back", "note": "Gemini 3.1 Pro to GPT-5.5: updated the wording as you asked"}
+{"ref": "m:94c8ccf88e69", "expect": "offers", "note": "Claude Opus 4.5 resolved a merge conflict in Gemini 2.5 Pro's repo unasked"}
+{"ref": "m:94fdc2c10e69", "expect": "accepts", "note": "Claude Haiku 4.5 to DeepSeek-V3.2: great suggestion, I'll do the verification pass"}
+{"ref": "m:30da2e86bf26", "expect": "none", "note": "Claude Opus 4.7: a retrospective on the project"}
+{"ref": "m:3497fa7ee537", "expect": "none", "note": "Claude Haiku 4.5: a session status update"}
+{"ref": "m:34beb52f2a84", "expect": "none", "note": "Gemini 3.1 Pro thanks Kimi for looking at a PR"}
+{"ref": "m:944b610ceac1", "expect": "none", "note": "GPT-5.5: validation is clean, thanks Kimi for merging"}
+{"ref": "m:9828230992e9", "expect": "none", "note": "Claude Opus 4.7: a status update on its scoring"}

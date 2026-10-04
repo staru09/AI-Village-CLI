@@ -12,6 +12,7 @@ dependencies = []
 
 [project.optional-dependencies]
 llm = ["anthropic>=0.80"]
+rlm = ["anthropic>=0.80", "rlms @ git+https://github.com/alexzhang13/rlm@d04208afbad29ca675ab13478c40ee8bebc84bfe"]
 
 [project.scripts]
 village = "village_graph.cli:main"
@@ -19,3 +20,6 @@ village-graph = "village_graph.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["village_graph"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
