@@ -352,7 +352,7 @@ def main():
     ok = sum(bool(c.get('quote_ok')) for c in total)
     nav = ''.join(f'<div><div class="g">{E(g)}</div><ul>' + ''.join(f'<li><a href="#{E(k)}">{E(short_q(d))}</a></li>' for k, d in items if d['_group'] == g) + '</ul></div>'
                   for g in groups)
-    exp = [(k, t) for k, t in (('exp-compare', 'Harness vs DocETL (E22)'), ('exp-eval', '5-question eval (E21)'), ('exp-log', 'Experiment log E1–E24'))
+    exp = [(k, t) for k, t in (('exp-compare', 'Harness vs DocETL (E22)'), ('exp-eval', '5-question eval (E21)'), ('exp-log', 'Experiment log (all entries)'))
            if k.split('-')[1] in extra]
     nav = (f'<div><div class="g">Experiments</div><ul>' + ''.join(f'<li><a href="#{k}">{t}</a></li>' for k, t in exp) + '</ul></div>' if exp else '') + nav
     rows = ''.join(f'<tr><td><a href="#{E(k)}">{E(k)}</a></td><td>{E(short_q(d, 150))}</td><td>{E(first_sentence(d.get("answer")))}</td>'
