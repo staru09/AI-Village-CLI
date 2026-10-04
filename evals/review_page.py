@@ -197,6 +197,9 @@ thead th { font: 600 11px/1.3 var(--body); letter-spacing: .05em; text-transform
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .summary { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
 .summary td:first-child { white-space: nowrap; }
+.md p { margin: 6px 0; max-width: 82ch; } .md h4 { margin: 10px 0 4px; } .md .li { margin-top: 3px; margin-bottom: 3px; }
+details.exp { border-top: 1px solid var(--line); padding: 8px 0; } details.exp > summary { cursor: pointer; font-weight: 500; }
+details.exp > :not(summary) { margin-left: 1em; } details.exp p { max-width: 82ch; white-space: pre-wrap; }
 .rx { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11.5px; }
 .finding { scroll-margin-top: 16px; }
 .summary .st { white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -255,9 +258,91 @@ document.addEventListener('click', function (e) {
 '''
 
 
+def md(text):
+    """The few Markdown forms experiments.md uses: paragraphs, bullets (nested by indent), tables, **bold**, `code`."""
+    import re
+    inline = lambda t: re.sub(r'`([^`]+)`', r'<code>\1</code>', re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', E(t)))
+    out, lines = [], text.splitlines()
+    i = 0
+    while i < len(lines):
+        l = lines[i].strip()
+        if l.startswith('|'):
+            rows = []
+            while i < len(lines) and lines[i].strip().startswith('|'):
+                cells = [c.strip() for c in lines[i].strip().strip('|').split('|')]
+                if not all(set(c) <= set('-: ') for c in cells):
+                    rows.append(cells)
+                i += 1
+            out.append('<div class="scroll"><table class="data"><thead><tr>' + ''.join(f'<th>{inline(c)}</th>' for c in rows[0]) + '</tr></thead><tbody>'
+                       + ''.join('<tr>' + ''.join(f'<td>{inline(c)}</td>' for c in r) + '</tr>' for r in rows[1:]) + '</tbody></table></div>')
+            continue
+        if re.match(r'(- |\d+\. )', l):  # a bullet and its wrapped lines
+            depth, item = (len(lines[i]) - len(lines[i].lstrip())) // 2, re.sub(r'^(- |\d+\. )', '', l)
+            i += 1
+            while i < len(lines) and lines[i].strip() and not re.match(r'\s*(- |\d+\. |\|)', lines[i]):
+                item += ' ' + lines[i].strip(); i += 1
+            out.append(f'<p class="li" style="margin-left:{depth * 1.2 + 1}em">• {inline(item)}</p>')
+            continue
+        if l:
+            para = l; i += 1
+            while i < len(lines) and lines[i].strip() and not re.match(r'\s*(- |\d+\. |\||#)', lines[i]):
+                para += ' ' + lines[i].strip(); i += 1
+            out.append(f'<h4>{inline(para.lstrip("#").strip())}</h4>' if para.startswith('#') else f'<p>{inline(para)}</p>')
+            continue
+        i += 1
+    return '<div class="md">' + ''.join(out) + '</div>'
+
+
+def log_section(path):
+    """experiments.md: the learnings open, then one folded block per experiment, newest first."""
+    import re
+    text = Path(path).read_text()
+    learn = text.split('## Learnings so far', 1)[1].split('\n---', 1)[0]
+    entries = re.split(r'\n(?=### E\d+\.)', text.split('\n---', 2)[2].split('\n---\n\n## Earlier', 1)[0])
+    blocks = ''.join(f'<details class="exp"><summary>{E(e.splitlines()[0].lstrip("# "))}</summary>{md(chr(10).join(e.splitlines()[1:]))}</details>'
+                     for e in entries if e.lstrip().startswith('### E'))
+    return (f'<article class="card" id="exp-log"><header><div class="eyebrow">Experiments · experiments.md</div><h2>Experiment log: everything run so far</h2></header>'
+            f'<details class="block" open><summary>Learnings so far</summary>{md(learn)}</details>{blocks}</article>')
+
+
+def compare_section(path):
+    """evals/harness_vs_docetl.py report: both systems' answers on the same questions, judged blind."""
+    r = json.loads(Path(path).read_text())
+    S = lambda s: '/'.join(str(s[k]) for k in ('correct', 'no_errors', 'complete', 'evidence'))
+    c, sec = r['cost_usd'], r['seconds']
+    head = (f'<div class="scroll"><table class="data"><thead><tr><th></th><th>Our harness</th><th>DocETL</th></tr></thead><tbody>'
+            f'<tr><td>More accurate ({E(r["judge"])}, blind)</td><td><b>{r["more_accurate"]["harness"]} of {r["questions"]}</b></td><td>{r["more_accurate"]["docetl"]} of {r["questions"]}</td></tr>'
+            f'<tr><td>Mean score: correct / no errors / complete / evidence (0-10)</td><td>{S(r["mean_scores"]["harness"])}</td><td>{S(r["mean_scores"]["docetl"])}</td></tr>'
+            f'<tr><td>Cost</td><td><b>${c["harness"]}</b></td><td>${c["docetl"]} (${c["docetl_map"]} map + ${c["docetl_reduce"]} reduce); ${c["docetl_actually_spent_including_misgrouped_run_1"]} spent in all, with my grouping bug</td></tr>'
+            f'<tr><td>Time</td><td>{round(sec["harness"] / 60, 1)} min</td><td>about {round((sec["docetl_map"] + sec["docetl_reduce"]) / 60)} min</td></tr></tbody></table></div>')
+    rows = ''.join(f'<details class="exp"><summary><b>{E(q["id"])}</b> · more accurate: <b>{E(q["more_accurate"])}</b> · harness {S(q["scores"]["harness"])} · DocETL {S(q["scores"]["docetl"])}</summary>'
+                   f'<p><b>Judge:</b> {E(q["why"])}</p><p><b>Question:</b> {E(q["question"])}</p>'
+                   f'<details class="block"><summary>Ground truth</summary><p>{E(q["ground_truth"])}</p></details>'
+                   f'<details class="block"><summary>Our harness’s answer ({q["harness"]["commands"]} commands, {q["harness"]["cited_refs"]} refs cited, ${q["harness"]["usd"]})</summary><p>{E(q["harness"]["answer"])}</p></details>'
+                   f'<details class="block"><summary>DocETL’s answer</summary><p>{E(q["docetl"]["answer"])}</p></details></details>' for q in r['per_question'])
+    notes = ''.join(f'<p class="note">{E(n)}</p>' for n in r.get('notes') or [])
+    return (f'<article class="card" id="exp-compare"><header><div class="eyebrow">Experiments · E22</div><h2>Our harness against a DocETL pipeline on {r["questions"]} ground-truth questions</h2></header>'
+            f'<p class="note">Each answer is scored against that question’s ground truth on this page by <code>{E(r["judge"])}</code>, which does not know which system wrote which answer. '
+            f'Harness: Claude Opus 5.5 searching with the <code>village</code> tool. DocETL: reads all {r["docetl_setup"]["units"]:,} units of the goal (Claude Haiku 4.5 map, Claude Opus 5.5 reduce).</p>{head}{notes}{rows}</article>')
+
+
+def eval_section(path):
+    """A `village eval` run file: pass or fail per question, with the reason."""
+    rows = json.loads(Path(path).read_text())
+    body = ''.join(f'<tr><td>{E(r["id"])}</td><td>{"pass" if r["pass"] else "<b>FAIL</b>"}</td><td class="num">{r["seconds"]}</td><td class="num">{r["usd"]}</td>'
+                   f'<td class="num">{r.get("cited", "")}</td><td>{E(r["why"] or "")}</td></tr>' for r in rows)
+    return (f'<article class="card" id="exp-eval"><header><div class="eyebrow">Experiments · E21</div><h2>village eval on 5 questions written from this ground truth: {sum(r["pass"] for r in rows)} of {len(rows)} passed</h2></header>'
+            '<p class="note">Each answer is checked by rule for the key facts, then by a judge model (Claude Opus 5.5) against the truth.</p>'
+            f'<div class="scroll"><table class="data"><thead><tr><th>Question</th><th>Result</th><th>Seconds</th><th>$</th><th>Refs cited</th><th>Why it failed</th></tr></thead><tbody>{body}</tbody></table></div></article>')
+
+
 def main():
-    out, items = sys.argv[1], []
+    out, items, extra = sys.argv[1], [], {}
     for arg in sys.argv[2:]:
+        if arg.startswith('--'):  # --compare=FILE --eval=FILE --log=FILE
+            k, v = arg[2:].split('=', 1)
+            extra[k] = v
+            continue
         group, path = arg.split('=', 1)
         d = json.loads(Path(path).read_text())
         d['_group'] = group
@@ -267,6 +352,9 @@ def main():
     ok = sum(bool(c.get('quote_ok')) for c in total)
     nav = ''.join(f'<div><div class="g">{E(g)}</div><ul>' + ''.join(f'<li><a href="#{E(k)}">{E(short_q(d))}</a></li>' for k, d in items if d['_group'] == g) + '</ul></div>'
                   for g in groups)
+    exp = [(k, t) for k, t in (('exp-compare', 'Harness vs DocETL (E22)'), ('exp-eval', '5-question eval (E21)'), ('exp-log', 'Experiment log E1–E24'))
+           if k.split('-')[1] in extra]
+    nav = (f'<div><div class="g">Experiments</div><ul>' + ''.join(f'<li><a href="#{k}">{t}</a></li>' for k, t in exp) + '</ul></div>' if exp else '') + nav
     rows = ''.join(f'<tr><td><a href="#{E(k)}">{E(k)}</a></td><td>{E(short_q(d, 150))}</td><td>{E(first_sentence(d.get("answer")))}</td>'
                    f'<td class="st">{sum(bool(c.get("quote_ok")) for f in d.get("findings") or [] for c in f.get("citations") or [])} / '
                    f'{sum(len(f.get("citations") or []) for f in d.get("findings") or [])}</td><td>{E(((d.get("confidence") or "").replace(":", " ").replace(",", " ").split() or [""])[0])}</td></tr>'
@@ -281,6 +369,7 @@ def main():
   <header class="intro">
     <div class="eyebrow">AI Village · “Perform novel research!” · 11–15 May 2026 · 15 agents</div>
     <h1>Village Ground Truth Review</h1>
+    {'<p>The experiments come first: our harness against DocETL on these questions, the eval run, and the full experiment log (bottom of the page).</p>' if extra else ''}
     <p>{len(items)} questions answered from the raw records, for your review. Every finding cites the record it rests on with an exact quote, and code checked each quote against the database: {ok} of {len(total)} were found in the cited record. Open any ref with <code>village show REF</code>.</p>
     <div class="legend"><span><span class="pill truth">ground truth</span> recorded by the system: commands, outputs, errors, events</span>
       <span><span class="pill claim">claim</span> an agent's own words: chat, reasoning, intent, memory</span>
@@ -289,8 +378,11 @@ def main():
       <button class="btn" id="b-bad" aria-pressed="false">Show only findings with an unverified quote</button></div>
   </header>
   <section class="summary scroll"><table><thead><tr><th>Id</th><th>Question</th><th>Answer in one line</th><th>Quotes found</th><th>Confidence</th></tr></thead><tbody>{rows}</tbody></table></section>
+  {compare_section(extra['compare']) if 'compare' in extra else ''}
+  {eval_section(extra['eval']) if 'eval' in extra else ''}
   {incidents(items)}
   {"".join(card(k, d) for k, d in items)}
+  {log_section(extra['log']) if 'log' in extra else ''}
 </main></div>
 <script>{JS}</script>'''
     Path(out).write_text(page)
