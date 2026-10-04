@@ -29,7 +29,8 @@ What the experiments below have taught us, with the entry each one comes from. U
   an agent's text. Compute the day from the date and the total from the records (E18, `s3_claims`).
 - **The mention table only knows full names.** 246 of 2,146 messages name a peer only as "Gemini", "Claude" or "Kimi",
   88 of them GPT-5.5's, so anything built on mentions under-counts the #best room (E18, `m4_matrix`).
-- **Actions exist only for 10:00–14:00 Pacific time**, and 15 May has about half the actions of the other days. An
+- **In goal 41, actions exist only for 10:00–14:00 Pacific time**, and 15 May has about half the actions of the other
+  days. The hours changed over the village's history (E24): check them per goal. An
   absence outside those hours is not evidence (E18, `q2_coercion`).
 
 ### About the methods
