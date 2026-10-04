@@ -5,7 +5,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from . import commands, db, evidence
 from .core import connect
 
-MENTIONS = ('pair', 'neighbors', 'top-pairs', 'hubs', 'families', 'agents', 'examples', 'ignored', 'replies')
+MENTIONS = ('pair', 'neighbors', 'top-pairs', 'hubs', 'families', 'leaders', 'agents', 'examples', 'ignored', 'replies')
 LLM = ('label', 'labels', 'verdict', 'check', 'look', 'ask', 'eval')
 SPENDS = ('label', 'check', 'look', 'ask', 'rlm', 'eval')  # these call a model: they cost money
 EPILOG = '''Start with `goals`, then `overview --goal N`. Every row has a ref (m: chat, t: action, s: session, e: event, k: memory,
@@ -102,6 +102,9 @@ def parser():
     add('hubs', 'agents with the most distinct partners', also=[mentions()])
     p = add('families', "do agents mention their own maker's models more than chance? per family, or per village goal", 100, [mentions(0)])
     p.add_argument('--by', choices=['family', 'goal'], default='family')
+    p = add('leaders', 'who delegates to whom, who takes delegations up, same family or not (needs `label delegation` first)', 100, [mentions(0)])
+    p.add_argument('--within', type=int, default=60, help='minutes in which an accept or a report back counts (default 60)')
+    p.add_argument('--strict', action='store_true', help='count only messages that assign a task (`directs`), not requests for help')
     add('agents', 'roster: model, messages sent, partners, first and last message', 100, [mentions()])
     p = add('examples', 'the messages behind A -> B, newest first', 10, [mentions()])
     p.add_argument('a'); p.add_argument('b')

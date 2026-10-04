@@ -62,6 +62,63 @@ def families(con, a, table):
     table('mentions from one family (rows) to another (columns)', ['from \\ to', *fams], [[f, *(matrix[(f, g)] or '' for g in fams)] for f in fams])
 
 
+def leaders(con, a, table):
+    """Who delegates, to whom, and who follows: from the `delegation` rubric's labels on @-messages.
+    A delegation = an @-message labelled directs or requests_help, counted once per agent it addresses. It was taken up
+    when that agent @-addressed the sender back within --within minutes with a message labelled accepts or reports_back."""
+    import sqlite3
+    N = dict(con.execute('SELECT id, name FROM nodes'))
+    fam = {i: maker(m) for i, m in con.execute('SELECT id, model FROM nodes')}
+    w, p = where(con, a, 'e.', kind=False)
+    try:
+        rows = con.execute(f"SELECT e.msg_id, e.src, e.dst, e.ts, e.room, coalesce(l.verdict, l.label) FROM edges e JOIN L.labels l "
+                           f"ON l.rubric = 'delegation' AND l.ref = 'm:' || substr(replace(e.msg_id, '-', ''), 1, 12) "
+                           f"WHERE e.kind = 'addressed' AND e.src != 'human' AND e.dst != 'human' AND {w} ORDER BY e.ts", p).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    if not rows:
+        return table('no delegation labels in this scope: run `label delegation` with the same scope first', ['agent'], [])
+    asks = [r for r in rows if r[5] in (('directs',) if a.strict else ('directs', 'requests_help'))]
+    back = [r for r in rows if r[5] in ('accepts', 'reports_back')]
+    took = set()  # (msg, dst) of delegations that were taken up
+    for m, s, d, ts, room, _ in asks:
+        if any(bs == d and bd == s and ts < bts <= _later(ts, a.within) for _, bs, bd, bts, _, _ in back):
+            took.add((m, d))
+    made, got, pairs = defaultdict(list), defaultdict(list), Counter()
+    for m, s, d, ts, room, lab in asks:
+        made[s].append((m, d))
+        got[d].append((m, s))
+        pairs[(s, d)] += 1
+    pct = lambda x, n: f'{100 * x // n}%' if n else ''
+    what = 'tasks assigned (label `directs` only)' if a.strict else 'delegations made (labels `directs` and `requests_help`)'
+    table(f'as a leader: {what}, judged by a model under the rubric `delegation`, and how many the addressed agent took up within {a.within} min',
+          ['agent', 'messages that delegate', 'delegations', 'to agents', 'taken up', 'rate'],
+          [(N[s], len({m for m, _ in v}), len(v), len({d for _, d in v}), sum((m, d) in took for m, d in v), pct(sum((m, d) in took for m, d in v), len(v)))
+           for s, v in sorted(made.items(), key=lambda kv: -sum((m, d) in took for m, d in kv[1]))][:a.limit])
+    table('as a follower: delegations received, and how many it took up (accepted or reported back)',
+          ['agent', 'delegations received', 'from agents', 'took up', 'rate'],
+          [(N[d], len(v), len({s for _, s in v}), sum((m, d) in took for m, _ in v), pct(sum((m, d) in took for m, _ in v), len(v)))
+           for d, v in sorted(got.items(), key=lambda kv: -sum((m, kv[0]) in took for m, _ in kv[1]))][:a.limit])
+    table('who delegates to whom most', ['from', 'to', 'delegations', 'taken up', 'same family'],
+          [(N[s], N[d], n, sum((m, dd) in took for m, dd in made[s] if dd == d), 'yes' if fam[s] == fam[d] else 'no')
+           for (s, d), n in pairs.most_common(a.limit if a.limit < 20 else 15)])
+    same = sum(n for (s, d), n in pairs.items() if fam[s] == fam[d])
+    inroom = defaultdict(Counter)  # chance: targets among the others in the room, by how often each is @-addressed there
+    for _, s, d, _, room, _ in rows:
+        inroom[room][d] += 1
+    exp = 0.0
+    for m, s, d, ts, room, _ in asks:
+        others = sum(c for b, c in inroom[room].items() if b != s)
+        exp += sum(c for b, c in inroom[room].items() if b != s and fam[b] == fam[s]) / others if others else 0
+    table('delegations to the same maker\'s models, against chance', ['delegations', 'to own family', 'share', 'expected by chance', 'ratio'],
+          [(len(asks), same, pct(same, len(asks)), f'{100 * exp / len(asks):.0f}%', f'{same / exp:.2f}' if exp else '')])
+
+
+def _later(ts, minutes):
+    from datetime import datetime, timedelta
+    return (datetime.fromisoformat(ts[:19]) + timedelta(minutes=minutes)).isoformat(' ')
+
+
 def run(con, a):
     """A parsed mention command -> blocks. `edges` (src name, dst name, count) picks the sample messages shown below."""
     names = dict(con.execute('SELECT id, name FROM nodes'))
@@ -107,6 +164,9 @@ def run(con, a):
 
     elif a.cmd == 'families':
         families(con, a, table)
+
+    elif a.cmd == 'leaders':
+        leaders(con, a, table)
 
     elif a.cmd == 'agents':
         wm, pm = where(con, a, kind=False)  # messages have no kind

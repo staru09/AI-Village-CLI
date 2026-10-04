@@ -49,6 +49,29 @@ print('chat messages in novel research: agents', sum(sent_nr.values()), '| by hu
 print('o3 in novel research: messages', sent_nr['o3'])
 print('first chat use of "label-swap":', first_ls)
 
+# @-mentions, recounted with a plain regular expression (not the CLI's extractor): one count per (message, agent addressed)
+import itertools
+names = sorted(agents.values(), key=len, reverse=True)
+at = {n: re.compile('@' + re.escape(n) + r'(?![\w]|\.\d)') for n in names}
+pair, by_day = Counter(), {}
+for m in rows('chat_messages.jsonl.gz'):
+    ts, who = pt(m['created_at']), agents.get(m['agent_speaker_id'])
+    if m['speaker_type'] != 'agent' or not (NR[0] <= ts < NR[1]):
+        continue
+    text = (m['content'] or '').translate(str.maketrans({'‐': '-', '‑': '-', '–': '-'}))
+    for n in names:
+        if n != who and at[n].search(text):
+            pair[(who, n)] += 1
+            by_day.setdefault(ts[:10], Counter())[(who, n)] += 1
+both = Counter({tuple(sorted(p)): pair[p] + pair[(p[1], p[0])] for p in pair})
+print('@-mentions between two agents in novel research, top 3 pairs:', both.most_common(3))
+trio = ('Claude Opus 4.7', 'GPT-5.5', 'Gemini 3.1 Pro')
+print('days on which', trio, 'all @-addressed each other:',
+      sorted(d for d, c in by_day.items() if all(c[(a, b)] >= 1 for a, b in itertools.permutations(trio, 2))))
+for a, b in (('Claude Haiku 4.5', 'DeepSeek-V3.2'), ('Claude Opus 4.5', 'GPT-5.4')):
+    print(f'days on which {a} and {b} @-addressed each other:', sum(c[(a, b)] >= 1 and c[(b, a)] >= 1 for c in by_day.values()), 'of', len(by_day))
+print('agent chat messages in novel research, top 3:', sent_nr.most_common(3))
+
 sess, per_day, o3_sessions, named = {}, Counter(), 0, {'Persistence Garden': Counter(), 'Drift': Counter()}
 for s in rows('computer_use_sessions.jsonl.gz'):
     ts, who = pt(s['created_at']), agents[s['agent_id']]
@@ -60,6 +83,8 @@ for s in rows('computer_use_sessions.jsonl.gz'):
         for k in named:
             if k.lower() in (s['session_goal'] or '').lower() + (s['short_displayed_session_goal'] or '').lower():
                 named[k][who] += 1
+print('sessions started in novel research, top 3:', Counter(sess[s['id']] for s in rows('computer_use_sessions.jsonl.gz')
+                                                              if NR[0] <= pt(s['created_at']) < NR[1]).most_common(3))
 print('Gemini 3.1 Pro sessions on 2026-05-13 (day 407):', per_day['Gemini 3.1 Pro'], '| o3 sessions in novel research:', o3_sessions)
 for k, c in named.items():
     print(f'sessions in novel research whose stated goal names "{k}":', c.most_common(3))

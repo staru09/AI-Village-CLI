@@ -13,3 +13,5 @@ village.tmp
 labels.db
 evals/runs/
 history.jsonl
+.venv-docetl/
+docetl/out/

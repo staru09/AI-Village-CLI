@@ -65,7 +65,9 @@ Every query command takes the same scope flags. They combine (the narrowest wins
 
 **Who talks to whom** (from `@Name` and plain name mentions in chat; there is no reply-to field in the dataset)
 
-`pair A B`, `neighbors A`, `top-pairs`, `hubs`, `agents`, `examples A B`, `ignored`, `replies [A]`. They also take
+`pair A B`, `neighbors A`, `top-pairs`, `hubs`, `agents`, `examples A B`, `ignored`, `replies [A]`, `families`
+(do agents mention their own maker's models more than chance?) and `leaders` (who assigns tasks to whom; needs
+`label delegation` first; `--strict` counts only assigned tasks). They also take
 `--room` and `--kind addressed|named`. "Replied" in `replies` means the agent posted anything in the same room within
 `--within` minutes.
 
@@ -79,6 +81,7 @@ Every query command takes the same scope flags. They combine (the narrowest wins
 | `check RUBRIC CASES.jsonl` | runs the rubric on cases with known answers and reports agreement |
 | `look REF "question"` | a vision model reads one screenshot |
 | `ask "question"` | an agent answers by running these commands, and cites refs |
+| `rlm "question" --goal N` | experimental: a Recursive Language Model over the scope, in a Docker sandbox (`uv sync --extra rlm`) |
 | `eval [FILE]` | grades the agent on questions with known answers |
 
 Models: `label` uses `$VILLAGE_LABEL_MODEL` (default `claude-haiku-4-5`), `ask` uses `$VILLAGE_ASK_MODEL` (default
@@ -162,12 +165,14 @@ after 30 seconds.
 
 ## Eval
 
-`evals/questions.json` holds 22 questions with known answers, on "Perform novel research!" (11 to 15 May 2026) plus
-a few on chat from other goals. Build the database with `village build --goal "novel research"` first.
+`evals/questions.json` holds 34 questions with known answers, on "Perform novel research!" (11 to 15 May 2026) plus
+a few on chat from other goals. The 12 with ids G1–G12 cover who assigns tasks, recurring groups and alignment with the
+goal; `experiments.md` (E12–E16) says how each was verified. Build the database with `village build --goal "novel research"` first.
 
 | Kind | Tests | Graded by |
 |---|---|---|
 | lookup, count, social | facts and counts | a number or a name in the answer |
+| swarm, leader, alignment | who works with whom, who assigns tasks, who stays on the goal | names in the answer, then a judge model |
 | investigate | finding and reading the right records | names and facts, then a judge model against the ground truth |
 | claim-vs-record | telling what an agent said from what it did | a judge model |
 | absence | not inventing: an agent that was not there, reasoning that was not recorded, actions that are not loaded | a judge model |
