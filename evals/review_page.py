@@ -28,6 +28,9 @@ def citation(c):
             f'<span class="field">{E(c.get("field"))}</span>{mark}</div><blockquote>{E(c.get("quote"))}</blockquote></li>')
 
 
+STAR = set()  # 'file-N' ids of findings shown under Key findings
+
+
 def finding(f, n, key=''):
     k = kind_of(f)
     label = {'truth': 'ground truth', 'claim': 'claim', 'interp': 'interpretation'}[k]
@@ -40,8 +43,9 @@ def finding(f, n, key=''):
                  f'<dl>{"".join(f"<dt>{E(a)}</dt><dd>{E(b)}</dd>" for a, b in rows)}</dl></div>')
     cites = f.get('citations') or []
     bad = sum(not c.get('quote_ok') for c in cites)
-    return (f'<li id="{E(key)}-{n}" class="finding k-{k}{" has-bad" if bad or not cites else ""}"><div class="fhead"><span class="num">{n}</span>'
-            f'<span class="pill {k}">{label}</span>' + (f'<h4 class="claim">{E(f["title"])}</h4>' if f.get('title') else f'<p class="claim">{E(f.get("claim"))}</p>') + f'</div>{extra}'
+    star = f'{key}-{n}' in STAR
+    return (f'<li id="{E(key)}-{n}" class="finding k-{k}{" has-bad" if bad or not cites else ""}{" star" if star else ""}"><div class="fhead"><span class="num">{n}</span>'
+            f'<span class="pill {k}">{label}</span>' + ('<span class="pill keyf">★ key finding</span>' if star else '') + (f'<h4 class="claim">{E(f["title"])}</h4>' if f.get('title') else f'<p class="claim">{E(f.get("claim"))}</p>') + f'</div>{extra}'
             f'<details class="cites"{" open" if bad else ""}><summary>{len(cites)} citation{"s" if len(cites) != 1 else ""}'
             f'{f" · {bad} not verified" if bad else ""}</summary><ul>{"".join(map(citation, cites))}</ul></details></li>')
 
@@ -197,6 +201,14 @@ thead th { font: 600 11px/1.3 var(--body); letter-spacing: .05em; text-transform
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .summary { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
 .summary td:first-child { white-space: nowrap; }
+.keybox { border: 2px solid #c99a00; }
+.keybox .hl { display: grid; gap: 8px; } .keybox .hl > p { color: var(--muted); max-width: 82ch; }
+.keybox ol { margin: 0; padding-left: 1.4em; display: grid; gap: 12px; } .keybox ol ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.keybox a.claim { color: var(--fg); font-weight: 500; }
+.pill.keyf { color: #6b4e00; background: #fbe7a1; }
+.finding.star .fhead { grid-template-columns: 2em auto auto minmax(0, 1fr); }
+.finding.star { background: #fdf6dc; border-left: 4px solid #c99a00; padding-left: 10px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .finding.star { background: #2e2810; } :root:not([data-theme="light"]) .pill.keyf { color: #f3d36b; background: #3a3112; } }
 .md p { margin: 6px 0; max-width: 82ch; } .md h4 { margin: 10px 0 4px; } .md .li { margin-top: 3px; margin-bottom: 3px; }
 details.exp { border-top: 1px solid var(--line); padding: 8px 0; } details.exp > summary { cursor: pointer; font-weight: 500; }
 details.exp > :not(summary) { margin-left: 1em; } details.exp p { max-width: 82ch; white-space: pre-wrap; }
@@ -305,6 +317,22 @@ def log_section(path):
             f'<details class="block" open><summary>Learnings so far</summary>{md(learn)}</details>{blocks}</article>')
 
 
+def highlights_section(path, items):
+    """A few findings worth reading first: [{title, why, findings: ["file-N", ...]}], each linking to its card."""
+    data = {k: d for k, d in items}
+    out = ''
+    for h in json.loads(Path(path).read_text()):
+        rows = ''
+        for fid in h['findings']:
+            key, n = fid.rsplit('-', 1)
+            f = data[key]['findings'][int(n) - 1]
+            STAR.add(fid)
+            rows += (f'<li><a class="claim" href="#{E(fid)}">{E(f["claim"])}</a> <span class="field">({E(key)}, finding {E(n)})</span>'
+                     f'<ul>{"".join(citation(c) for c in f.get("citations") or [])}</ul></li>')
+        out += f'<div class="hl"><h3>{E(h["title"])}</h3><p>{E(h["why"])}</p><ol>{rows}</ol></div>'
+    return f'<article class="card keybox" id="key-findings"><header><div class="eyebrow">Key findings</div><h2>Read these first</h2></header>{out}</article>'
+
+
 def compare_section(path):
     """evals/harness_vs_docetl.py report: both systems' answers on the same questions, judged blind."""
     r = json.loads(Path(path).read_text())
@@ -352,8 +380,10 @@ def main():
     ok = sum(bool(c.get('quote_ok')) for c in total)
     nav = ''.join(f'<div><div class="g">{E(g)}</div><ul>' + ''.join(f'<li><a href="#{E(k)}">{E(short_q(d))}</a></li>' for k, d in items if d['_group'] == g) + '</ul></div>'
                   for g in groups)
+    hl = highlights_section(extra['highlights'], items) if 'highlights' in extra else ''
     exp = [(k, t) for k, t in (('exp-compare', 'Harness vs DocETL (E22)'), ('exp-eval', '5-question eval (E21)'), ('exp-log', 'Experiment log (all entries)'))
            if k.split('-')[1] in extra]
+    nav = ('<div><div class="g">Key findings</div><ul><li><a href="#key-findings">Read these first</a></li></ul></div>' if hl else '') + nav
     nav = (f'<div><div class="g">Experiments</div><ul>' + ''.join(f'<li><a href="#{k}">{t}</a></li>' for k, t in exp) + '</ul></div>' if exp else '') + nav
     rows = ''.join(f'<tr><td><a href="#{E(k)}">{E(k)}</a></td><td>{E(short_q(d, 150))}</td><td>{E(first_sentence(d.get("answer")))}</td>'
                    f'<td class="st">{sum(bool(c.get("quote_ok")) for f in d.get("findings") or [] for c in f.get("citations") or [])} / '
@@ -378,6 +408,7 @@ def main():
       <button class="btn" id="b-bad" aria-pressed="false">Show only findings with an unverified quote</button></div>
   </header>
   <section class="summary scroll"><table><thead><tr><th>Id</th><th>Question</th><th>Answer in one line</th><th>Quotes found</th><th>Confidence</th></tr></thead><tbody>{rows}</tbody></table></section>
+  {hl}
   {compare_section(extra['compare']) if 'compare' in extra else ''}
   {eval_section(extra['eval']) if 'eval' in extra else ''}
   {incidents(items)}
