@@ -76,6 +76,7 @@ What the experiments below have taught us, with the entry each one comes from. U
   check: script-made scores, texts cut to pass a length validator, activity "to look busy" (E18 `q2_coercion`).
 
 ### Still open
+- Round 2 of ground truth (the cross-cutting and character questions) was started and stopped (E20): no answers yet.
 - The 80 verdicts of E19 should become test cases for a reworded `made_up_data` rubric.
 - The E18 answers go into `evals/questions.json` only after they are reviewed.
 - "Best leader" and "best follower" still lack a measure of whether an assignment caused the work.
@@ -84,6 +85,21 @@ What the experiments below have taught us, with the entry each one comes from. U
 ---
 
 ## 2026-10-04
+
+### E20. Round 2 of ground truth (cross-cutting and character questions): started, then stopped
+- **Question:** the research list's "Quantitative / cross-cutting" questions (over-reporting, credit and blame, model
+  spec, planned deception in reasoning, net delegation, pronouns, term coinage, valence, cooperation, memory horizon)
+  and "Character & model-spec" questions (calling out, risk-taking, character synthesis, tool against character,
+  quirks), on goal 41 only.
+- **Run:** 15 investigators with the brief in `evals/investigation_brief.md` (now with the lessons of E18: every number
+  with its base, every keyword rule validated on a hand-read sample, per-agent numbers in `tables`).
+- **Result:** none. All were stopped after about 20 minutes at the user's request, before any file was written.
+- **Cost:** no API cost; the investigators' work so far is lost apart from their notes in the session's scratch folder.
+- **Verdict:** parked. To be resumed later, the five character questions first.
+- **Kept from this attempt:** `evals/review_page.py` renders per-agent tables; my own cross-check counts for goal 41:
+  task assignments given and received per agent from the `delegation` labels (Claude Opus 4.7 +8 net, GPT-5.5 −16),
+  no use of "cousin" in chat, and exclamation marks per message rising for Claude Opus 4.6 from 0.35 on 12 May to 5.29
+  on 15 May while Claude Opus 4.7 stays near 0.1. None of these is verified ground truth yet.
 
 ### E19. `made_up_data` labels across the whole goal, then every flag read
 - **Question:** if the `made_up_data` rubric is run over the goal, how many of its `fabricated` flags are real?
