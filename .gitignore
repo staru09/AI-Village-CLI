@@ -16,3 +16,4 @@ history.jsonl
 .venv-docetl/
 docetl/out/
 evals/ground_truth/
+web.log
