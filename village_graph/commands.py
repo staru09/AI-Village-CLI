@@ -1,7 +1,8 @@
-"""Who talks to whom: the mention commands (pair, neighbors, top-pairs, hubs, agents, examples, ignored, replies)."""
+"""Who talks to whom: the mention commands (pair, neighbors, top-pairs, hubs, families, agents, examples, ignored, replies)."""
 import argparse, statistics
+from collections import Counter, defaultdict
 
-from .core import node, one, ref, where
+from .core import maker, node, one, ref, where
 
 # message text for tables: first 300 chars on one line
 SNIPPET = ("replace(substr(m.content,1,300), char(10), ' ') "
@@ -14,6 +15,51 @@ def degrees(con, w, p):
         f"SELECT n, count(DISTINCT o), sum(out_), sum(1-out_), count(*) FROM ("
         f"  SELECT src n, dst o, 1 out_ FROM edges WHERE {w} UNION ALL"
         f"  SELECT dst, src, 0 FROM edges WHERE {w}) GROUP BY n", (*p, *p))}
+
+
+def mixing(con, w, p, fam):
+    """Do agents mention their own maker's models more than chance? -> {family: [agents, mentions made, to own family, expected to own]},
+    and the family-to-family counts. Expected: each mention lands on another agent in the same room in proportion to how often
+    that agent is mentioned there, so who shares a room, and who is popular, are already accounted for."""
+    rows = con.execute(f"SELECT src, dst, room, count(*) FROM edges WHERE {w} AND src != 'human' AND dst != 'human' GROUP BY src, dst, room", p).fetchall()
+    inroom = defaultdict(Counter)
+    for s, d, r, n in rows:
+        inroom[r][d] += n
+    stats, matrix, members = defaultdict(lambda: [0, 0, 0.0]), Counter(), defaultdict(set)
+    for s, d, r, n in rows:
+        f = fam[s]
+        members[f].add(s)
+        members[fam[d]].add(d)
+        matrix[(f, fam[d])] += n
+        others = sum(c for b, c in inroom[r].items() if b != s)
+        stats[f][0] += n
+        stats[f][1] += n * (fam[d] == f)
+        stats[f][2] += n * sum(c for b, c in inroom[r].items() if b != s and fam[b] == f) / others if others else 0
+    return {f: [len(members[f]), *v] for f, v in stats.items()}, matrix
+
+
+def families(con, a, table):
+    fam = {i: maker(m) for i, m in con.execute('SELECT id, model FROM nodes')}
+    pct = lambda x, n: f'{100 * x / n:.0f}%' if n else ''
+    row = lambda name, k, n, own, exp: [name, k, n, own, pct(own, n), pct(exp, n), f'{own / exp:.2f}' if exp > 0.5 else '']
+    if a.by == 'goal':
+        rows = []
+        for n, goal, s, e in con.execute("SELECT n, goal, start_time, coalesce(end_time, '9999') FROM goals ORDER BY start_time").fetchall():
+            w, p = where(con, argparse.Namespace(**{**vars(a), 'since': max(s, a.since or ''), 'until': min(e, a.until or '9999')}))
+            st, _ = mixing(con, w, p, fam)
+            tot = [sum(v[i] for v in st.values()) for i in (1, 2, 3)]
+            if tot[0]:
+                rows.append(row(f'{n}: {one(goal, 46)}', len({x for x, in con.execute(f"SELECT DISTINCT src FROM edges WHERE {w} AND src != 'human'", p)}), *tot))
+        return table('per village goal: do agents mention their own maker\'s models more than chance? (ratio above 1 = they do)',
+                     ['goal', 'agents', 'mentions', 'to own family', 'share', 'expected', 'ratio'], rows[-a.limit:])
+    w, p = where(con, a)
+    st, matrix = mixing(con, w, p, fam)
+    fams = sorted(st, key=lambda f: -st[f][1])
+    tot = [sum(v[i] for v in st.values()) for i in (1, 2, 3)]
+    table('mentions of the same maker\'s models, against chance (expected: targets picked among the others in the same room, by how often each is mentioned)',
+          ['family', 'members named', 'mentions made', 'to own family', 'share', 'expected', 'ratio'],
+          [row(f, *st[f]) for f in fams] + [row('all', sum(v[0] for v in st.values()), *tot)])
+    table('mentions from one family (rows) to another (columns)', ['from \\ to', *fams], [[f, *(matrix[(f, g)] or '' for g in fams)] for f in fams])
 
 
 def run(con, a):
@@ -58,6 +104,9 @@ def run(con, a):
         d = degrees(con, w, p)
         ids = sorted(d, key=lambda n: (-d[n][0], -d[n][3]))[:a.limit]
         table('agents by number of distinct partners', ['agent', 'partners', 'out', 'in', 'total'], [[names[n], *d[n]] for n in ids])
+
+    elif a.cmd == 'families':
+        families(con, a, table)
 
     elif a.cmd == 'agents':
         wm, pm = where(con, a, kind=False)  # messages have no kind

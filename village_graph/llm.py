@@ -144,19 +144,19 @@ def unit_text(con, rub, rid):
     N = evidence.names_of(con)
     if k == 'm':
         src, room, ts, content, why = con.execute('SELECT src, room, ts, content, reasoning FROM messages WHERE id = ?', (rid,)).fetchone()
-        vg, ag = evidence.context(con, src, ts)
+        vg, ag, before = evidence.context(con, src, ts)
         model = con.execute('SELECT model FROM nodes WHERE id = ?', (src,)).fetchone()[0]
         before = con.execute('SELECT ts, id, src, content FROM messages WHERE room = ? AND ts < ? ORDER BY ts DESC LIMIT ?', (room, ts, int(rub['context']))).fetchall()
-        return '\n'.join([f'VILLAGE GOAL: {vg}', f'AGENT GOAL: {ag or "none assigned at that time"}', '',
+        return '\n'.join([f'VILLAGE GOAL: {vg}', f'AGENT GOAL: {ag or "none assigned at that time"}', f'PREVIOUS VILLAGE GOAL: {before or "none"}', '',
                           *(['EARLIER MESSAGES IN THE ROOM (context only, do not label these)'] if before else []),
                           *(f'{t[11:19]} {ref("m", i)} {N.get(s, s)}: {one(c, 700)}' for t, i, s, c in reversed(before)), '',
                           f'THE MESSAGE TO LABEL · {ref("m", rid)} · {N.get(src, src)} ({model}) in #{room} at {ts[:19]} PT', content,
                           *(['', 'ITS REASONING BEFORE WRITING IT (private, a claim)', db.cut(why, 3000)] if why else [])])
     s, agent, ts, kind, act, out, err, failed, why = con.execute(
         'SELECT session, agent, ts, kind, action, output, error, failed, reasoning FROM turns WHERE id = ?', (rid,)).fetchone()
-    vg, ag = evidence.context(con, agent, ts)
+    vg, ag, before = evidence.context(con, agent, ts)
     intent = con.execute('SELECT short, goal FROM sessions WHERE id = ?', (s,)).fetchone() or ('', '')
-    return '\n'.join([f'VILLAGE GOAL: {vg}', f'AGENT GOAL: {ag or "none assigned at that time"}',
+    return '\n'.join([f'VILLAGE GOAL: {vg}', f'AGENT GOAL: {ag or "none assigned at that time"}', f'PREVIOUS VILLAGE GOAL: {before or "none"}',
                       f'STATED INTENT OF THE SESSION (claim): {intent[0]} — {one(intent[1], 600)}', '',
                       f'THE ACTION TO LABEL · {ref("t", rid)} · {N.get(agent, agent)} at {ts[:19]} PT · {kind}',
                       *(['[its reasoning before the action · claim]', db.cut(why, 4000)] if why else ['[no reasoning recorded]']),
@@ -217,7 +217,7 @@ def judge(cl, model, rub, text, spend):
 
 def label(a):
     rub = rubric(a.rubric)
-    con, cl, model = connect(600), client(), a.model or LABEL_MODEL
+    con, cl, model = connect(600), client(), a.model or rub.get('model') or LABEL_MODEL
     todo, n = units(con, a, rub)
     k = UNITS[rub['unit']]
     L = labels_db()
@@ -307,7 +307,8 @@ def verdict(a):
 
 def check(a):
     """A rubric against cases with known answers: does the labeller catch what we know is there, and leave alone what is not?"""
-    rub, model = rubric(a.rubric), a.model or LABEL_MODEL
+    rub = rubric(a.rubric)
+    model = a.model or rub.get('model') or LABEL_MODEL
     cases = [json.loads(l) for l in Path(a.cases).read_text().splitlines() if l.strip() and not l.startswith('#')]
     con, cl, spend = connect(600), client(), Spend()
     texts = [unit_text(con, rub, lookup(con, c['ref'])[1]) for c in cases]

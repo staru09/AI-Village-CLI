@@ -87,6 +87,11 @@ assert q('agents')[0] == ['Alpha', 'claude-x', 3, 2, 3, 1, '2026-09-01 10:00', '
 assert [r[4] for r in run('pair', 'alpha', 'beta')[-1][3]] == ['@Beta again', 'Alpha: yes', '@Beta hi']   # samples: both directions, newest first
 assert len(run('pair', 'alpha', 'beta', '--samples', '0')) == 2
 assert [r[4] for r in run('top-pairs', '--samples', '2')[-1][3]] == ['@Beta again', 'Alpha: yes']   # the top pair's, not the newest overall
+assert q('families')[-1] == ['all', 2, 4, 0, '0%', '0%', '']                                          # one agent per maker: no own-family target exists
+assert q('families', '--by', 'goal') == [['1: Do research!', 2, 4, 0, '0%', '0%', '']]
+lim = lambda *args: cli.parser().parse_args(args).limit                                                # each command keeps its own default
+assert (lim('goals'), lim('find', 'x'), lim('timeline', 'a'), lim('examples', 'a', 'b')) == (100, 20, 80, 10)
+assert cli.parser().parse_args(['pair', 'a', 'b']).samples == 5 and cli.parser().parse_args(['families']).samples == 0
 assert q('agents', '--goal', '2') == [] and len(q('agents', '--day', '518')) == 3                      # scope: goal and village day
 
 # evidence

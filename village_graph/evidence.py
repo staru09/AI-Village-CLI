@@ -210,10 +210,13 @@ def count(con, a):
 # ---- read ------------------------------------------------------------------------------------------------------------
 
 def context(con, agent, ts):
-    """The goals in force for an agent at a time: (village goal, agent goal or '')."""
-    g = con.execute("SELECT n, goal FROM goals WHERE start_time <= ? AND coalesce(end_time, '9999') > ?", (ts, ts)).fetchone()
+    """The goals in force for an agent at a time: (village goal, agent goal or '', the village goal before it or '')."""
+    g = con.execute("SELECT n, goal, start_time FROM goals WHERE start_time <= ? AND coalesce(end_time, '9999') > ?", (ts, ts)).fetchone()
     ag = con.execute("SELECT short, name FROM agent_goals WHERE agent = ? AND start_time <= ? AND coalesce(end_time, '9999') > ?", (agent, ts, ts)).fetchone()
-    return (f'{g[0]}: {g[1]}' if g else 'between goals'), (f'{ag[0]}: {ag[1]}' if ag else '')
+    prev = con.execute('SELECT goal, end_time FROM goals WHERE start_time < ? ORDER BY start_time DESC LIMIT 1', (g[2] if g else ts,)).fetchone()
+    day = g and con.execute('SELECT day FROM days WHERE date = ?', (g[2][:10],)).fetchone()
+    return ((f'{g[0]}: {g[1]} (set on {g[2][:10]}' + (f', village day {day[0]}' if day else '') + ')') if g else 'between goals',
+            f'{ag[0]}: {ag[1]}' if ag else '', f'{prev[0]} (ended {prev[1][:10]})' if prev else '')
 
 
 def show(con, a):
@@ -300,10 +303,11 @@ def session_text(con, sid, budget=14000, why=300):
     Long sessions keep every action but shorten each one, so the text stays near `budget` characters."""
     s, turns, close, mem = session_parts(con, sid)
     N = names_of(con)
-    vg, ag = context(con, s[1], s[2])
+    vg, ag, before = context(con, s[1], s[2])
     model = con.execute('SELECT model FROM nodes WHERE id = ?', (s[1],)).fetchone()
     head = [f'SESSION {ref("s", sid)} · {N.get(s[1], s[1])} ({model[0] if model else "?"}) · {s[2][:19]} to {(s[3] or "?")[11 if (s[3] or "")[:10] == s[2][:10] else 0:19]} PT',
             f'VILLAGE GOAL (ground truth): {vg}', f'AGENT GOAL (ground truth): {ag or "none assigned at that time"}',
+            f'PREVIOUS VILLAGE GOAL: {before or "none"}',
             f'STATED INTENT (claim, written by the agent before the session): {s[5]}', s[4], '',
             f'ACTIONS (ground truth: what it did and what the system answered; {len(turns)} in all, {s[10] or 0} look failed)']
     per = max(120, min(700, (budget - 2500) // max(len(turns), 1)))
