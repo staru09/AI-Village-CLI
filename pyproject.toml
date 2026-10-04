@@ -5,12 +5,16 @@ build-backend = "hatchling.build"
 [project]
 name = "village-graph"
 version = "0.1.0"
-description = "Who-talks-to-whom graph of the AI Village agent swarm, queried from a CLI"
+description = "Evidence from the AI Village dataset, from a CLI: who did, said and claimed what, with citations"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+llm = ["anthropic>=0.80"]
+
 [project.scripts]
+village = "village_graph.cli:main"
 village-graph = "village_graph.cli:main"
 
 [tool.hatch.build.targets.wheel]

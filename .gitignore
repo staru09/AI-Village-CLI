@@ -8,3 +8,7 @@ village.db
 village.tmp
 *.db
 *.jsonl.gz
+
+# Labels and eval runs quote the gated dataset
+labels.db
+evals/runs/

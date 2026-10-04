@@ -1,37 +1,65 @@
 # AI Village CLI
 
-`village-graph` builds a who-talks-to-whom graph of the [AI Village](https://theaidigest.org/village) agents from the [`aidigestorg/ai-village`](https://huggingface.co/datasets/aidigestorg/ai-village) dataset. You can query it from a CLI or a small web UI. It uses only the Python standard library and stores the graph in a local SQLite file.
+`village` answers questions about the [AI Village](https://theaidigest.org/village) from the
+[`aidigestorg/ai-village`](https://huggingface.co/datasets/aidigestorg/ai-village) dataset: who did what, who said
+what, and whether the two match. It loads the dataset into one local SQLite file and gives you (or an AI agent) small
+commands over it. Every row it prints carries a ref such as `t:a6924e1133b2`, so every claim in an answer can be checked.
+
+It separates three levels of trust, as the dataset's own README asks ("treat an agent's narration as a claim, not
+ground truth"):
+
+| Trust | What | Shown as |
+|---|---|---|
+| Ground truth | actions (commands, clicks, messages sent), the output and errors the system returned, events, the goals set by AI Digest, screenshots | `·truth` |
+| Claim | the agents' own words: chat, stated session goals, reasoning, self-reports, memory | `·claim` |
+| Secondary | AI Digest's LLM-written recaps (written without seeing inside computer sessions) | `SECONDARY` |
 
 ## Setup
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). The core commands use only the standard library.
 
-1. Request access to the gated dataset on its Hugging Face page, then log in and download the five files it needs (about 360 MB):
+1. Request access to the gated dataset on its Hugging Face page, then download the tables (about 5.5 GB; screenshots
+   are separate and optional):
 
    ```bash
    uvx --from huggingface_hub hf auth login
-   uvx --from huggingface_hub hf download aidigestorg/ai-village --repo-type dataset \
-     agents.jsonl.gz chat_rooms.jsonl.gz village_goals.jsonl.gz events.jsonl.gz chat_messages.jsonl.gz
+   uvx --from huggingface_hub hf download aidigestorg/ai-village --repo-type dataset --include "*.jsonl.gz" "manifest.json"
    ```
 
-   The tool reads the latest snapshot from the Hugging Face cache. To use a folder of `.jsonl.gz` files instead, set `VILLAGE_DATA=/path/to/folder`.
+   The tool reads the latest snapshot in the Hugging Face cache, or the folder in `VILLAGE_DATA`.
 
-2. Install the project and run the self-check:
+2. Install and self-check:
 
    ```bash
    git clone https://github.com/staru09/AI-Village-CLI.git && cd AI-Village-CLI
-   uv sync
-   uv run python test_village_graph.py   # prints "ok"
+   uv sync                       # add --extra llm for the commands that call Claude (label, ask, eval, look)
+   uv run python test_village.py # prints "ok"
    ```
 
-## Run
+3. Build the database. Chat, sessions and events always cover the whole history. Actions (with outputs and reasoning)
+   and memories are heavy, so you choose their window:
+
+   ```bash
+   uv run village build --goal "novel research"   # one village goal: 2.5 minutes, 1.2 GB
+   uv run village build --days 7                  # the last 7 days (the default)
+   uv run village build --all                     # everything: several GB
+   ```
+
+## Use
 
 ```bash
-uv run village-graph build                            # build village.db from the last 7 days (--days 0 = full history)
-uv run village-graph top-pairs                        # strongest agent pairs
-uv run village-graph pair "opus 4.8" "gemini 2.5"     # how two agents interact over time
-uv run village-graph web                              # interactive graph at http://127.0.0.1:8765
-uv run village-graph -h                               # all commands
+uv run village goals                                         # the 51 village goals, numbered
+uv run village overview --goal 41                            # who was there, how much each did
+uv run village find "random scores" --goal 41                # search chat, actions, outputs, reasoning, memory
+uv run village show t:a6924e1133b2 --context 3               # one record in full, with its neighbours
+uv run village session s:dfb842ed0b98                        # a session: intent -> actions -> self-report
+uv run village timeline "gemini 3.1" --day 407               # one agent's day, interleaved
+uv run village count "sorry|my mistake" --goal 41 --by maker # a rate per 1,000 words
+uv run village label made_up_data --goal 41 --agent gemini   # a rubric applied by a model (needs ANTHROPIC_API_KEY)
+uv run village ask "Did any agent submit made-up scores during the novel research goal?"
+uv run village eval                                          # grade the agent on questions with known answers
 ```
 
-`village.db` is generated locally and is not part of the repo. See [USAGE.md](USAGE.md) for every command and filter, how interactions are defined, and the SQLite schema.
+`village -h` lists every command, and `village <command> -h` its options. [USAGE.md](USAGE.md) explains them, the
+rubric format, the eval set and the database schema. All times are Pacific time (the village clock). `village.db`,
+`labels.db` and `evals/runs/` quote the gated dataset and are not part of the repo.
