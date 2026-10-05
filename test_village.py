@@ -132,7 +132,26 @@ hist = get('/api/history')
 assert [h['source'] for h in hist[:2]] == ['terminal', 'web'] and get(f"/api/history?id={hist[0]['id']}")['blocks'][0][0] == 'table'
 assert {'find', 'ask'} <= {c['name'] for c in get('/api/meta')['commands']} and 'Alpha' in get('/api/meta')['agents']
 assert b'<title>village</title>' in urllib.request.urlopen(f'http://127.0.0.1:{srv.server_port}/').read()
+# research tools stay off the public page; a long command can run as a job and be polled
+assert 'not available' in get('/api/run?cmd=py%20print(1)')['error'] and 'not available' in get('/api/run?cmd=ask%20hi%20--deep')['error']
+job = get('/api/run?cmd=sessions&async=1')['job']
+for _ in range(50):
+    r = get(f'/api/job?id={job}')
+    if r['done']:
+        break
+    __import__('time').sleep(0.1)
+assert r['done'] and r['run']['blocks'][0][0] == 'table'
 srv.shutdown()
+
+# sample: a seeded sample of a pattern's matches; py: read-only code over the same database
+blocks, _ = cli.run_cmd('sample "random|again" --in chat,action --n 1')
+assert '1 of 2 matches' in blocks[0][1] and blocks[0][3] == cli.run_cmd('sample "random|again" --in chat,action --n 1')[0][0][3]  # same seed, same sample
+from village_graph import pyrun
+assert pyrun.run("print(q('SELECT count(*) FROM messages')[0][0], names['a'])") == '6 Alpha'
+for bad in ("open('x.txt', 'w')", "import socket; socket.socket()", "import os; os.system('true')", "db.execute('CREATE TABLE z (a)')",
+            "open('/etc/hostname').read()"):
+    assert pyrun.run(bad).startswith('error:'), bad
+assert [x for x in llm.QUOTE.findall('It said "finished scoring the packets" [m:1] and "ok".') if len(x.split()) >= 3] == ['finished scoring the packets']
 
 # the labeller's unit text carries only citable refs; grading rules
 con = core.connect()

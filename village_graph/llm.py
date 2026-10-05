@@ -403,6 +403,28 @@ TOOL = {'name': 'village', 'description': 'Run one village CLI command and get i
                          'required': ['command'], 'additionalProperties': False}}
 
 
+PYTOOL = {'name': 'python', 'description': 'Run read-only Python over the village database and get what it prints. Ready: db (sqlite3, '
+          'labels attached as L), q(sql, *params) -> rows, names {agent id: name}, ids {name: id}, ref(kind, id) -> "m:0a1b2c3d4e5f", '
+          'sample(items, n=25, seed=41), span(n) -> (start, end) of goal n, re, json, collections, statistics. A goal is a TIME RANGE: '
+          'filter turns/messages/sessions/memories by ts >= start AND ts < end (sessions.goal is the session\'s stated intent as text, not '
+          'a goal number). turns.kind is the action type: bash, gui or chat. Agents: join nodes on turns.agent / messages.src / sessions.agent. Tables as in `schema`; times Pacific; 90 s limit.',
+          'input_schema': {'type': 'object', 'properties': {'code': {'type': 'string'}}, 'required': ['code'], 'additionalProperties': False}}
+
+DEEP = '''
+
+RESEARCH MODE (this question needs counting and checking, not a quick lookup)
+- You also have a `python` tool: read-only Python over the database. Use it for per-agent tables, joins, regular expressions over many
+  rows, day-by-day counts and tests that the fixed commands cannot do. Print compact results, not raw rows.
+- Every pattern you count with must be checked: `sample PATTERN --in FIELD --goal N` (or sample() in python) shows 25 random matches;
+  read them, and give "x of 25 correct" with the count. Below 20 of 25, do not report the count: read all matches, or say you could not.
+- Every number with its base ("12 of 148 messages"); per-agent results as a short table; name what the data cannot show (reasoning
+  coverage differs by model; actions exist only in working hours).
+- Quote exactly: a quoted phrase must appear in a record you read, and its ref must be next to it.'''
+
+QUOTE = re.compile(r'["\u201c]([^"\u201c\u201d]{12,300})["\u201d]')
+squash = lambda s: ' '.join((s or '').split()).lower()
+
+
 def cache_last(messages):
     """Keep one cache breakpoint, on the newest tool result, so each step re-reads the conversation so far from cache."""
     for m in messages:
@@ -457,27 +479,29 @@ def now(question, date, model=None):
             'cited': len(cited), 'unknown': sorted(cited - seen), 'model': model}
 
 
-def answer(question, goal=None, model=None, max_steps=40, log=None, date=None):
-    """Run the agent on one question -> {answer, commands, steps, spend, cited, unknown}."""
+def answer(question, goal=None, model=None, max_steps=None, log=None, date=None, deep=False):
+    """Run the agent on one question -> {answer, commands, steps, spend, cited, unknown, quotes, unseen}."""
     if date and NOW.search(question):
         return now(question, date)
     from .cli import run_line
-    cl, model, spend = client(), model or ASK_MODEL, Spend()
-    system = [{'type': 'text', 'text': AGENT.format(reference=reference()), 'cache_control': {'type': 'ephemeral'}}]
+    from . import pyrun
+    cl, model, spend, max_steps = client(), model or ASK_MODEL, Spend(), max_steps or (120 if deep else 40)
+    system = [{'type': 'text', 'text': AGENT.format(reference=reference()) + (DEEP if deep else ''), 'cache_control': {'type': 'ephemeral'}}]
+    tools = [TOOL, PYTOOL] if deep else [TOOL]
     messages = [{'role': 'user', 'content': question + (f'\n\n(Scope: the village goal "{goal}".)' if goal else '')
                  + (f'\n\n(The user is watching the village at {date} Pacific time.)' if date else '')}]
-    seen, commands, text = set(), [], ''
+    seen, commands, text, pool = set(), [], '', []
     repaired = False
     for step in range(max_steps + 3):
         last = step >= max_steps
         cache_last(messages)
-        resp = cl.messages.create(model=model, max_tokens=16000, system=system, messages=messages, **({} if last else {'tools': [TOOL]}))
+        resp = cl.messages.create(model=model, max_tokens=16000, system=system, messages=messages, **({} if last else {'tools': tools}))
         spend.add(model, resp.usage)
         if resp.stop_reason == 'refusal':
             if model != FALLBACK_MODEL:
                 if log:
                     log(f'  {model} stopped with a refusal after {len(commands)} commands: starting again with {FALLBACK_MODEL}')
-                r = answer(question, goal, FALLBACK_MODEL, max_steps, log)
+                r = answer(question, goal, FALLBACK_MODEL, max_steps, log, None, deep)
                 r['spend'].usd += spend.usd
                 r['model'] = f'{FALLBACK_MODEL} (after {model} refused)'
                 return r
@@ -488,11 +512,16 @@ def answer(question, goal=None, model=None, max_steps=40, log=None, date=None):
         if resp.stop_reason == 'tool_use' and calls:
             results = []
             for c in calls:
-                cmd = str(c.input.get('command', ''))
-                out = run_line(cmd.removeprefix('village ').strip())
+                if c.name == 'python':
+                    cmd = 'python: ' + one(str(c.input.get('code', '')), 400)
+                    out = pyrun.run(str(c.input.get('code', '')))
+                else:
+                    cmd = str(c.input.get('command', ''))
+                    out = run_line(cmd.removeprefix('village ').strip())
                 if len(out) > 14000:
                     out = out[:14000] + f'\n… [{len(out) - 14000:,} more characters: narrow the scope, lower --limit, or use --in / --kinds]'
                 seen |= refs_in(out)
+                pool.append(squash(out))
                 commands.append(cmd)
                 if log:
                     log(f'  {len(commands):>2}. village {one(cmd, 150)}')
@@ -504,22 +533,29 @@ def answer(question, goal=None, model=None, max_steps=40, log=None, date=None):
         text = text_of(resp)
         cited = refs_in(text)
         unknown = sorted(cited - seen)
-        if unknown and not repaired and not last:  # a citation the tools never showed is not evidence
+        quotes = [x for x in QUOTE.findall(text) if len(x.split()) >= 3]
+        everything = '\n'.join(pool)
+        unseen = [x for x in quotes if squash(x) not in everything]  # a quote must be words some tool result showed
+        if (unknown or unseen) and not repaired and not last:  # a citation or quote the tools never showed is not evidence
             repaired = True
-            messages.append({'role': 'user', 'content': 'These refs in your answer did not appear in any tool result: ' +
-                             ', '.join(unknown) + '. Check them with `show`, or cite records you saw, then give the full answer again.'})
+            messages.append({'role': 'user', 'content': (f'These refs in your answer did not appear in any tool result: {", ".join(unknown)}. ' if unknown else '')
+                             + (f'These quotes are not in any tool result word for word: {"; ".join(one(x, 80) for x in unseen[:8])}. ' if unseen else '')
+                             + 'Check them with `show`, quote exactly or paraphrase without quotation marks, then give the full answer again.'})
             continue
         return {'answer': text, 'commands': commands, 'steps': len(commands), 'spend': spend, 'cited': len(cited), 'unknown': unknown,
-                'stop': resp.stop_reason, 'model': model}
-    return {'answer': text, 'commands': commands, 'steps': len(commands), 'spend': spend, 'cited': 0, 'unknown': [], 'stop': 'max_steps', 'model': model}
+                'quotes': len(quotes), 'unseen': unseen, 'stop': resp.stop_reason, 'model': model}
+    return {'answer': text, 'commands': commands, 'steps': len(commands), 'spend': spend, 'cited': 0, 'unknown': [], 'quotes': 0, 'unseen': [],
+            'stop': 'max_steps', 'model': model}
 
 
 def ask(a):
-    r = answer(a.question, a.goal, a.model, a.max_steps, None if a.quiet else lambda s: print(s, file=sys.stderr, flush=True), a.date)
+    r = answer(a.question, a.goal, a.model, a.max_steps, None if a.quiet else lambda s: print(s, file=sys.stderr, flush=True), a.date, a.deep)
     return [('text', a.question, r['answer']),
             ('table', 'the commands it ran', ['#', 'command'], [(i + 1, c) for i, c in enumerate(r['commands'])]),
             ('note', f'{r["model"]}: {r["steps"]} commands, {r["spend"]}. Citations: {r["cited"]} refs, ' +
-             ('all shown by the tools.' if not r['unknown'] else f'{len(r["unknown"])} NOT shown by any tool result: {", ".join(r["unknown"])}.'))]
+             ('all shown by the tools.' if not r['unknown'] else f'{len(r["unknown"])} NOT shown by any tool result: {", ".join(r["unknown"])}.')
+             + (f' Quotes: {r.get("quotes", 0)}, ' + ('all found word for word in tool results.' if not r.get('unseen') else
+                f'{len(r["unseen"])} NOT found word for word in any tool result.') if r.get('quotes') else ''))]
 
 
 # ---- eval ------------------------------------------------------------------------------------------------------------
@@ -572,7 +608,7 @@ def eval(a):  # noqa: A001 (the command's name)
                 r = {'answer': subprocess.run(a.agent_cmd.replace('{question}', q['question'].replace("'", "’")), shell=True, capture_output=True,
                                               text=True, timeout=1800).stdout, 'steps': '', 'spend': None, 'unknown': [], 'commands': []}
             else:
-                r = answer(q['question'], q.get('goal'), a.model)
+                r = answer(q['question'], q.get('goal'), a.model, deep=getattr(a, 'deep', False))
             ok, why = grade(cl, q, r['answer'], judge_spend)
         except Exception as e:
             r, ok, why = {'answer': '', 'steps': '', 'spend': None, 'unknown': [], 'commands': []}, False, f'{type(e).__name__}: {e}'
@@ -586,7 +622,7 @@ def eval(a):  # noqa: A001 (the command's name)
     runs.mkdir(exist_ok=True)
     out = runs / f'{datetime.now():%Y%m%d-%H%M%S}.json'
     out.write_text(json.dumps([{'id': q['id'], 'pass': ok, 'why': why, 'seconds': round(s), 'usd': round(r['spend'].usd, 3) if r['spend'] else None,
-                                'model': r.get('model'), 'steps': r['steps'], 'cited': r.get('cited', 0), 'unknown_refs': r.get('unknown', []), 'commands': r['commands'], 'answer': r['answer'], 'truth': q['truth']} for q, r, ok, why, s in done], ensure_ascii=False, indent=1))
+                                'model': r.get('model'), 'steps': r['steps'], 'cited': r.get('cited', 0), 'unknown_refs': r.get('unknown', []), 'quotes': r.get('quotes', 0), 'unseen_quotes': r.get('unseen', []), 'commands': r['commands'], 'answer': r['answer'], 'truth': q['truth']} for q, r, ok, why, s in done], ensure_ascii=False, indent=1))
     kinds = {}
     for q, r, ok, why, s in done:
         kinds.setdefault(q.get('kind', 'other'), []).append(ok)

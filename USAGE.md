@@ -62,6 +62,8 @@ Every query command takes the same scope flags. They combine (the narrowest wins
 | `memory AGENT [--diff] [--grep REGEX]` | its notes at the end of the scope, or what each rewrite added |
 | `shot REF [--save PATH]` | an action's screenshot (needs the dataset's `images/` tars, or `VILLAGE_IMAGES`) |
 | `sql "SELECT …"` | one read-only query |
+| `sample REGEX [--in FIELDS] [--n 25] [--seed 41]` | a seeded random sample of what a pattern matches: read it to check the pattern before you trust its count |
+| `py "CODE"` (or `--file`, or stdin) | read-only Python over the database for counts and joins the other commands cannot do; terminal only |
 
 **Who talks to whom** (from `@Name` and plain name mentions in chat; there is no reply-to field in the dataset)
 
@@ -80,7 +82,7 @@ Every query command takes the same scope flags. They combine (the narrowest wins
 | `verdict RUBRIC REF LABEL [note]` | your own verdict on one unit; it overrides the model's label in every count |
 | `check RUBRIC CASES.jsonl` | runs the rubric on cases with known answers and reports agreement |
 | `look REF "question"` | a vision model reads one screenshot |
-| `ask "question"` | an agent answers by running these commands, and cites refs |
+| `ask "question" [--deep]` | an agent answers by running these commands, and cites refs; `--deep` is research mode (below) |
 | `rlm "question" --goal N` | experimental: a Recursive Language Model over the scope, in a Docker sandbox (`uv sync --extra rlm`) |
 | `eval [FILE]` | grades the agent on questions with known answers |
 
@@ -159,9 +161,27 @@ tool, and writes a short answer with refs. After it answers, the code checks tha
 tool result; if not, it must fix the answer. It ends with one `ANSWER:` line. The cost and the commands it ran are
 printed with the answer.
 
+The code also checks quotes: every phrase it puts in quotation marks must appear word for word in some tool result,
+or it must fix the answer. Both checks are printed with the answer.
+
+**Research mode (`ask --deep`)** is for questions that need counting and checking, like the behaviour scans in
+`experiments.md` (E27–E29):
+- **Budget:** 120 steps instead of 40.
+- **A second tool, `python`:** read-only Python over the database, with `db`, `q()`, `names`, `ref()`, `sample()` and
+  `span(n)` (a goal's start and end) ready to use.
+- **Extra rules in the prompt:** check every pattern with `sample` and report "x of 25 correct"; give every number
+  with its base; quote exactly.
+
+The Python runs in a child process with a 90 s, CPU and memory limit. It can open only the database read-only, cannot
+attach other databases, and an audit hook refuses file writes, reads outside the database folder and Python itself,
+network use and new processes. That is a guard, not a container: put it in one before letting untrusted people send
+code.
+
 The same loop can sit behind a web page: `village_graph.llm.answer(question)` returns the answer, the commands, the
-cost and the citation check. The database is opened read-only, `sql` accepts only `SELECT`, and a query is stopped
-after 30 seconds.
+cost and the checks. The database is opened read-only, `sql` accepts only `SELECT`, and a query is stopped after 30
+seconds. On the web page `py` and `--deep` are refused, so visitors cannot make it run code. A long question can run as
+a job: `/api/run?cmd=…&async=1` answers at once with `{"job": id}`; poll `/api/job?id=…` until `done` is true. This
+avoids proxy timeouts such as Cloudflare's 100 s.
 
 ## Eval
 

@@ -101,6 +101,30 @@ What the experiments below have taught us, with the entry each one comes from. U
 
 ## 2026-10-04
 
+### E30. The harness gets research tools: `py`, `sample`, quote checks, `ask --deep`, background jobs
+- **Why:** the behaviour scans (E27–E29) were done by Claude Code subagents writing their own Python. The harness had
+  only fixed commands and 40 steps, and scored 5.5 of 10 on long questions (E22). These are the pieces they used.
+- **What:**
+  - `village py` / the agent's `python` tool: read-only Python over the database (`db`, `q()`, `names`, `ref()`,
+    `sample()`, `span(n)`). It runs in a child process with a 90 s, CPU and memory limit. The database is opened
+    read-only with ATTACH refused, and an audit hook refuses writes, reads outside the database folder and Python,
+    network and new processes. Tested: each of those is refused, and normal queries work.
+  - `village sample`: a seeded random sample of a pattern's matches, the check every scan used before trusting a count.
+  - Quote checks in `ask`: a quoted phrase must appear word for word in a tool result, or the agent must fix it.
+  - `ask --deep` (and `eval --deep`): 120 steps, the python tool, and the scans' rules in the prompt.
+  - `/api/run?…&async=1` and `/api/job?id=…`: start a long command and poll for it. `py` and `--deep` are refused from
+    the web page.
+- **Smoke test** (Claude Haiku 4.5, 8 steps, "which agent ran the most bash commands in goal 41?"): three runs, $0.09
+  in all.
+  - **First run:** it treated `sessions.goal` (the session's stated plan) as the goal number, found nothing and said the
+    data was not loaded.
+  - **Second run:** with a `span(n)` helper and a note that a goal is a time range, it counted guessed "bash-like"
+    actions (3,245, wrong).
+  - **Third run:** after naming `turns.kind`, it answered correctly in one call (Gemini 3.1 Pro, 2,785).
+  - **Lesson:** the code tool needs the schema's traps spelled out, or a model writes plausible but wrong queries.
+- **Not done:** fan-out to sub-questions; a full eval of `--deep` against the 57 scan answers (the next step, and the
+  real test).
+
 ### E29. Behaviour scans, last three: character synthesis, tool vs character, quirks (by program)
 - **Question:** CH1–CH6 (self- and peer-described role, signature phrases, stable favourites, most-addressed peer),
   TC1–TC5 (does OpenAI "tool" vs Claude "character" hold with no user watching?), Q1–Q7 (mantras, standing rules,

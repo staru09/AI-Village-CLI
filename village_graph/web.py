@@ -12,9 +12,10 @@ from . import cli, db, evidence
 from .core import connect, lookup
 
 PAGE = Path(__file__).with_name('web.html')
-NEVER = ('build', 'eval', 'web')  # long jobs and the server itself: terminal only
+NEVER = ('build', 'eval', 'web', 'py')  # long jobs, the server itself, and running code: terminal only
 KEEP = 150                        # remembered runs
 LOCK = threading.Lock()
+JOBS = {}  # id -> the run's record once done, None while it runs (?async=1: start now, poll /api/job?id=)
 
 
 def history_file():
@@ -99,9 +100,28 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send([{k: r[k] for k in ('id', 'cmd', 'source', 'secs', 'error')} for r in runs[::-1]])
             if u.path == '/api/run':
                 cmd = q.get('cmd', '').strip().removeprefix('village ').strip()
+                if '--deep' in cmd.split():  # research mode runs model-written code and long jobs: terminal only
+                    return self.send(remember(cmd, None, 0, 'web', '`--deep` is not available here: run it in a terminal.'))
+                deny = NEVER + (() if self.llm else cli.SPENDS)
+                if q.get('async') and cmd:  # a long question: answer at once with a job id, so no proxy timeout cuts it off
+                    job = f'{time.time():.6f}'
+                    JOBS[job] = None
+                    def work():
+                        t = time.time()
+                        blocks, err = cli.run_cmd(cmd, deny=deny)
+                        JOBS[job] = remember(cmd, blocks, time.time() - t, 'web', err)
+                    threading.Thread(target=work, daemon=True).start()
+                    return self.send({'job': job})
                 t = time.time()
-                blocks, err = cli.run_cmd(cmd, deny=NEVER + (() if self.llm else cli.SPENDS)) if cmd else (None, 'Type a command, for example: goals')
+                blocks, err = cli.run_cmd(cmd, deny=deny) if cmd else (None, 'Type a command, for example: goals')
                 return self.send(remember(cmd, blocks, time.time() - t, 'web', err))
+            if u.path == '/api/job':
+                if q.get('id') not in JOBS:
+                    return self.send({'error': 'no such job'}, status=404)
+                rec = JOBS[q['id']]
+                if rec is not None:
+                    JOBS.pop(q['id'])  # ponytail: results live in memory until fetched once; a restart drops running jobs
+                return self.send({'done': rec is not None, **({'run': rec} if rec else {})})
             if u.path.startswith('/shot/'):
                 con = connect()
                 try:

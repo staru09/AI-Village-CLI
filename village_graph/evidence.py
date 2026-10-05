@@ -1,6 +1,6 @@
 """The evidence commands: orient (overview, goals, recap), search (find, first-use, terms, count), and read
 (show, timeline, sessions, session, said, memory). Every row carries a ref that `show` opens, so an answer can cite it."""
-import re, sqlite3, sys
+import random, re, sqlite3, sys
 from collections import Counter, defaultdict
 
 from . import db
@@ -205,6 +205,28 @@ def count(con, a):
             for k in sorted(units, key=(lambda k: k) if a.by == 'day' else (lambda k: -matches[k] / max(words[k], 1)))][:a.limit]
     return [('table', f'/{a.pattern}/ in {a.where or "chat"}, by {a.by} (a rule-based count, not a model\'s judgement)',
              [a.by, 'texts', 'texts with a match', 'share', 'matches', 'words', 'matches per 1,000 words'], rows)] + notes(con, a)
+
+
+def sample(con, a):
+    """A seeded random sample of the texts a regular expression matches: read them to check the pattern before trusting a count."""
+    lo, hi = scope(con, a)
+    N = names_of(con)
+    try:
+        rx = re.compile(a.pattern, 0 if a.case else re.I)
+    except re.error as e:
+        sys.exit(f'bad regular expression: {e}')
+    hits = []
+    for f in fields(a, 'chat'):
+        table, col, kind, who = FIELDS[f]
+        aw, ap = agent_filter(con, a, who) if who else ('', [])
+        for rid, w, ts, text in con.execute(f"SELECT id, {who or 'NULL'}, ts, {col} FROM {table} WHERE ts >= ? AND ts < ? AND {col} != ''{aw}", (lo, hi, *ap)):
+            if m := rx.search(text):
+                s = max(0, m.start() - a.width // 2)
+                hits.append((ts[:16], ref(kind, rid), N.get(w, w or ''), f, ('…' if s else '') + ' '.join(text[s:s + a.width].split()) + '…'))
+    pick = sorted(random.Random(a.seed).sample(hits, min(a.n, len(hits))))
+    return [('table', f'{len(pick)} of {len(hits)} matches of /{a.pattern}/ in {a.where or "chat"} (seed {a.seed}): read each, count how many '
+             'really are what you mean, and report "x of n correct" with any count you make from this pattern',
+             ['time', 'ref', 'agent', 'field', 'text around the match'], pick)] + notes(con, a)
 
 
 # ---- read ------------------------------------------------------------------------------------------------------------

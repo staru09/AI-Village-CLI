@@ -68,6 +68,18 @@ def parser():
     p.add_argument('--in', dest='where', help='fields to count in (default chat)')
     p.add_argument('--by', choices=['agent', 'model', 'maker', 'day', 'room', 'all'], default='agent')
     p.add_argument('--case', action='store_true', help='match case (default: ignore case)')
+    p = add('sample', 'a seeded random sample of the texts a regular expression matches: check a pattern by reading before you trust its count',
+            100, [who])
+    p.add_argument('pattern')
+    p.add_argument('--in', dest='where', help='fields to search (default chat)')
+    p.add_argument('--n', type=int, default=25, help='how many matches to show (default 25)')
+    p.add_argument('--seed', type=int, default=41)
+    p.add_argument('--width', type=int, default=240, help='characters of text around each match')
+    p.add_argument('--case', action='store_true', help='match case (default: ignore case)')
+    p = add('py', 'read-only Python over the database for counts and joins the other commands cannot do (db, q(), names, ref(), sample())',
+            scoped=False)
+    p.add_argument('code', nargs='?', help='the code; or --file, or stdin')
+    p.add_argument('--file')
     p = add('terms', 'words and names first used in chat inside the scope (coined terms), most widely adopted first', 40, [who])
     p.add_argument('--min-agents', type=int, default=2)
     p.add_argument('--min-uses', type=int, default=5)
@@ -139,7 +151,8 @@ def parser():
     p.add_argument('--goal', help='scope hint given to the agent')
     p.add_argument('--date', help='the day (and time) the user is watching, "YYYY-MM-DD [HH:MM]" Pacific: answers "what is happening" for it')
     p.add_argument('--model', help='default: $VILLAGE_ASK_MODEL or claude-opus-5-5')
-    p.add_argument('--max-steps', type=int, default=40)
+    p.add_argument('--max-steps', type=int, help='default 40, or 120 with --deep')
+    p.add_argument('--deep', action='store_true', help='research mode: 120 steps, Python, and every pattern checked by sampling')
     p.add_argument('--quiet', action='store_true', help="don't print each command as it runs")
     p = add('rlm', 'a whole-scope question answered by a Recursive Language Model: the records stay in a sandboxed REPL, not in the prompt')
     p.add_argument('question')
@@ -156,6 +169,7 @@ def parser():
     p.add_argument('--model')
     p.add_argument('--agent-cmd', help='grade another agent instead: a shell command with {question} in it that prints the answer')
     p.add_argument('--jobs', type=int, default=3)
+    p.add_argument('--deep', action='store_true', help='run the agent in research mode')
     p = add('web', 'the same commands in a browser: type one, or follow what you run in the terminal', scoped=False)
     p.add_argument('--host', default='127.0.0.1')
     p.add_argument('--port', type=int, default=8765)
@@ -203,6 +217,9 @@ def run(a):
     if a.cmd == 'rlm':
         from . import rlm_run
         return rlm_run.rlm(a)
+    if a.cmd == 'py':
+        from . import pyrun
+        return pyrun.py(a)
     if a.cmd in LLM:
         from . import llm
         return getattr(llm, a.cmd)(a)
@@ -230,7 +247,7 @@ def run_cmd(line, deny=()):
 
 def run_line(line):
     """A command line -> its output as text, for the agent."""
-    blocks, err = run_cmd(line, deny=('build', 'ask', 'rlm', 'eval', 'verdict', 'check', 'web'))
+    blocks, err = run_cmd(line, deny=('build', 'ask', 'rlm', 'eval', 'verdict', 'check', 'web', 'py'))
     return err if blocks is None else render(blocks)
 
 
