@@ -376,7 +376,7 @@ def highlights_section(path, items, r3paths=()):
             rows += (f'<li><a class="claim" href="#{E(fid)}">{E(f["claim"])}</a> <span class="field">({E(label)})</span>'
                      + (lambda cs: f'<details class="cites"><summary>{len(cs)} quote{"s" if len(cs) != 1 else ""} · {"all found in their records" if all(c.get("quote_ok") for c in cs) else "NOT all found"}</summary><ul>{"".join(citation(c) for c in cs)}</ul></details>')(f.get("citations") or [])
                      + '</li>')
-        out += f'<div class="hl" id="key-{len(re.findall("class=.hl. id", out))}"><h3>{E(h["title"])}</h3><p>{E(h["why"])}</p><ol>{rows}</ol></div>'
+        out += f'<div class="hl" id="key-{len(re.findall("class=.hl. id", out))}"><h3>{E(h["title"])}</h3><p>{E(h["why"])}</p><details class="cites"><summary>{len(h["findings"])} supporting findings</summary><ol>{rows}</ol></details></div>'
     return f'<article class="card keybox" id="key-findings"><header><div class="eyebrow">Key findings</div><h2>Read these first</h2></header>{out}</article>'
 
 
@@ -476,7 +476,7 @@ def main():
     rows = ''.join(f'<tr><td><a href="#{E(k)}">{E(k)}</a></td><td>{E(short_q(d, 150))}</td><td>{E(first_sentence(d.get("answer")))}</td>'
                    f'<td class="st">{sum(bool(c.get("quote_ok")) for f in d.get("findings") or [] for c in f.get("citations") or [])} / '
                    f'{sum(len(f.get("citations") or []) for f in d.get("findings") or [])}</td></tr>' for k, d in items)
-    tabs = [t for t in (('key', 'Key findings', hl and keynav), ('r3', 'Deception · calling out · leadership', r3nav and f'<div><ul>{r3nav}</ul></div>'), ('gt', f'Ground truth ({len(items)} questions)', gtnav),
+    tabs = [t for t in (('key', 'Key findings', hl and keynav), ('r3', 'Behaviour scans (by program)', r3nav and f'<div><ul>{r3nav}</ul></div>'), ('gt', f'Ground truth ({len(items)} questions)', gtnav),
                         ('exp', 'Experiments', exp and expnav)) if t[2]]
     page = f'''<title>Village Ground Truth Review</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
