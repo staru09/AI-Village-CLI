@@ -8,7 +8,7 @@ optional `review` ({status, notes}) written by whoever verified it; sweeps add i
 may carry `tables` (per-agent numbers), a `tally` (one verdict per flagged unit) or a `matrix` with `regex` and `precision`. GROUP is the heading the file is listed under.
 The page has no dependencies: it is a fragment (title + style + content) ready for an artifact or a browser.
 """
-import html, json, sys
+import html, json, re, sys
 from pathlib import Path
 
 E = lambda s: html.escape(str(s if s is not None else ''))
@@ -68,7 +68,7 @@ def card(key, d):
   {f'<div class="review"><div class="label">Checked by Claude · {E(rev.get("status"))}</div><p>{E(rev.get("notes"))}</p></div>' if rev else ''}
   <details class="block"><summary>Reasoning</summary><p>{E(d.get("reasoning"))}</p></details>
   {tables(d)}
-  <section><h3>Findings and citations</h3><ol class="findings">{"".join(finding(f, i + 1, key) for i, f in enumerate(fs))}</ol></section>
+  <details class="block"><summary>Findings and citations ({len(fs)})</summary><ol class="findings">{"".join(finding(f, i + 1, key) for i, f in enumerate(fs))}</ol></details>
   {matrix}
   {f'<section><h3>Could not be checked</h3><ul class="limits">{"".join(f"<li>{E(x)}</li>" for x in d.get("could_not_check") or [])}</ul></section>' if d.get('could_not_check') else ''}
   {f'<details class="block"><summary>{len(searches)} searches and counts that were run</summary><div class="scroll"><table><thead><tr><th>Command</th><th>Hits</th><th>What it showed</th></tr></thead><tbody>' + ''.join(f'<tr><td><code>{E(s.get("command"))}</code></td><td class="num">{E(s.get("hits"))}</td><td>{E(s.get("note"))}</td></tr>' for s in searches) + '</tbody></table></div></details>' if searches else ''}
@@ -213,6 +213,24 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .md p { margin: 6px 0; max-width: 82ch; } .md h4 { margin: 10px 0 4px; } .md .li { margin-top: 3px; margin-bottom: 3px; }
 details.exp { border-top: 1px solid var(--line); padding: 8px 0; } details.exp > summary { cursor: pointer; font-weight: 500; }
 details.exp > :not(summary) { margin-left: 1em; } details.exp p { max-width: 82ch; white-space: pre-wrap; }
+header.top { max-width: 1240px; margin: 0 auto; padding: 24px 20px 0; display: grid; gap: 10px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--line); }
+.tabs [role=tab] { font: 500 14px/1 var(--body); padding: 10px 14px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; background: none; color: var(--muted); cursor: pointer; }
+.tabs [role=tab][aria-selected=true] { background: var(--card); color: var(--fg); border-color: var(--line); margin-bottom: -1px; }
+.pane, .navpane { display: none; } body[data-tab=r3] [data-tab=r3], body[data-tab=gt] [data-tab=gt], body[data-tab=exp] [data-tab=exp] { display: grid; gap: 22px; }
+body[data-tab] .navpane[data-tab] { gap: 14px; }
+nav li.sub a { padding-left: 10px; color: var(--muted); font-size: 12.5px; }
+.card.r3 { gap: 0; } .card.r3 .lede { margin: 6px 0 10px; max-width: 82ch; }
+.q { border-top: 1px solid var(--line); padding: 14px 0; display: grid; gap: 8px; scroll-margin-top: 16px; }
+.qhead { display: grid; grid-template-columns: 3em minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.qid { font: 600 12px/1 var(--mono); color: var(--accent); } .qtext { color: var(--muted); font-size: 14px; }
+.qans { font-size: 15.5px; font-weight: 500; max-width: 82ch; margin-left: 3.5em; }
+.q > .scroll, .q > .qmeta, .q > details { margin-left: 3.5em; }
+.qmeta { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: var(--muted); }
+.r3t td, .r3t th { padding: 5px 8px; font-size: 13px; }
+td.bar { background: linear-gradient(90deg, var(--accent-soft) var(--w), transparent var(--w)); }
+@media (max-width: 900px) { nav li.sub { display: none; } }
+@media (max-width: 900px) { .qans, .q > .scroll, .q > .qmeta, .q > details { margin-left: 0; } }
 .rx { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11.5px; }
 .finding { scroll-margin-top: 16px; }
 .summary .st { white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -262,7 +280,19 @@ body.only-bad .finding:not(.has-bad) { display: none; }
 '''
 
 JS = '''
+function show(id) {
+  var t = document.getElementById(id); if (!t) return;
+  var pane = t.closest('.pane'); if (pane) setTab(pane.dataset.tab);
+  for (var p = t; p; p = p.parentElement) if (p.tagName === 'DETAILS') p.open = true;
+  t.scrollIntoView({ block: 'start' });
+}
+function setTab(tab) {
+  document.body.dataset.tab = tab;
+  document.querySelectorAll('.tabs [role=tab]').forEach(function (b) { b.setAttribute('aria-selected', b.dataset.tab === tab ? 'true' : 'false'); });
+}
 document.addEventListener('click', function (e) {
+  var tb = e.target.closest('.tabs [role=tab]'); if (tb) { setTab(tb.dataset.tab); scrollTo(0, 0); return; }
+  var a = e.target.closest('a[href^="#"]'); if (a) { e.preventDefault(); show(a.getAttribute('href').slice(1)); history.replaceState(null, '', a.getAttribute('href')); return; }
   var b = e.target.closest('.btn'); if (!b) return;
   var on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on ? 'true' : 'false');
   if (b.id === 'b-bad') document.body.classList.toggle('only-bad', on);
@@ -343,6 +373,47 @@ def highlights_section(path, items):
     return f'<article class="card keybox" id="key-findings"><header><div class="eyebrow">Key findings</div><h2>Read these first</h2></header>{out}</article>'
 
 
+def bars(t):
+    """A table whose numeric cells carry a bar scaled to their column's maximum."""
+    cols, rows = t.get('columns') or [], [[r.get(c) for c in t.get('columns') or []] if isinstance(r, dict) else r for r in t.get('rows') or []]
+    num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
+    top = [max([abs(r[i]) for r in rows if i < len(r) and num(r[i])] or [0]) for i in range(len(cols))]
+    cell = lambda v, i: (f'<td class="num bar" style="--w:{round(100 * abs(v) / top[i]) if top[i] else 0}%">{E(v)}</td>' if num(v) else f'<td>{E(v)}</td>')
+    return ('<div class="scroll"><table class="data r3t"><thead><tr>' + ''.join(f'<th>{E(c)}</th>' for c in cols) + '</tr></thead><tbody>'
+            + ''.join('<tr>' + ''.join(cell(v, i) for i, v in enumerate(r)) + '</tr>' for r in rows) + '</tbody></table></div>')
+
+
+def round3_section(paths):
+    """Round 3 files: {topic, summary, questions: [{id, question, answer, table, precision, program, limits}], findings: [{q, claim, kind, citations}]}."""
+    out, nav = '', ''
+    for path in paths:
+        d = json.loads(Path(path).read_text())
+        topic, qs = d.get('topic', Path(path).stem), d.get('questions') or []
+        ev = {}
+        for f in d.get('findings') or []:
+            ev.setdefault(f.get('q'), []).append(f)
+        tid = 'r3-' + Path(path).stem
+        cites = [c for f in d.get('findings') or [] for c in f.get('citations') or []]
+        ok = sum(bool(c.get('quote_ok')) for c in cites)
+        rows = ''
+        for q in qs:
+            fs = ev.get(q['id'], [])
+            n = sum(len(f.get('citations') or []) for f in fs)
+            bad = sum(not c.get('quote_ok') for f in fs for c in f.get('citations') or [])
+            rows += (f'<div class="q" id="{E(tid)}-{E(q["id"])}"><div class="qhead"><span class="qid">{E(q["id"])}</span><span class="qtext">{E(re.split(r"(?<=\?)\s+(?=[A-Z])", q["question"])[0])}</span></div>'
+                     f'<p class="qans">{E(q.get("answer"))}</p>'
+                     + (bars(q['table']) if q.get('table') and q['table'].get('rows') else '')
+                     + f'<div class="qmeta"><span>precision: {E(q.get("precision") or "n/a")}</span><span>program: <code>{E(q.get("program"))}</code></span>'
+                     + (f'<span>limit: {E(q["limits"])}</span>' if q.get('limits') else '') + '</div>'
+                     + (f'<details class="cites"><summary>Evidence: {len(fs)} findings, {n} quotes{f" · {bad} not found" if bad else " · all found in their records"}</summary>'
+                        f'<ol class="findings">{"".join(finding(f, i + 1, tid + "-" + q["id"]) for i, f in enumerate(fs))}</ol></details>' if fs else '')
+                     + '</div>')
+        out += (f'<article class="card r3" id="{E(tid)}"><header><div class="eyebrow">{E(topic)} · {len(qs)} questions · {ok} of {len(cites)} quotes found in their records</div>'
+                f'<h2>{E(topic)}</h2></header><p class="lede">{E(d.get("summary"))}</p>{rows}</article>')
+        nav += f'<li><a href="#{E(tid)}">{E(topic)}</a></li>' + ''.join(f'<li class="sub"><a href="#{E(tid)}-{E(q["id"])}">{E(q["id"])} {E(short_q(q, 44))}</a></li>' for q in qs)
+    return out, nav
+
+
 def compare_section(path):
     """evals/harness_vs_docetl.py report: both systems' answers on the same questions, judged blind."""
     r = json.loads(Path(path).read_text())
@@ -388,44 +459,42 @@ def main():
     groups = list(dict.fromkeys(d['_group'] for _, d in items))
     total = [c for _, d in items for f in d.get('findings') or [] for c in f.get('citations') or []]
     ok = sum(bool(c.get('quote_ok')) for c in total)
-    nav = ''.join(f'<div><div class="g">{E(g)}</div><ul>' + ''.join(f'<li><a href="#{E(k)}">{E(short_q(d))}</a></li>' for k, d in items if d['_group'] == g) + '</ul></div>'
-                  for g in groups)
-    hl = highlights_section(extra['highlights'], items) if 'highlights' in extra else ''
-    exp = [(k, t) for k, t in (('exp-compare', 'Harness vs DocETL (E22)'), ('exp-eval', '5-question eval (E21)'), ('exp-log', 'Experiment log (all entries)'))
-           if k.split('-')[1] in extra]
-    nav = ('<div><div class="g">Key findings</div><ul><li><a href="#key-findings">Read these first</a></li></ul></div>' if hl else '') + nav
-    nav = (f'<div><div class="g">Experiments</div><ul>' + ''.join(f'<li><a href="#{k}">{t}</a></li>' for k, t in exp) + '</ul></div>' if exp else '') + nav
+    hl = highlights_section(extra['highlights'], items) if 'highlights' in extra else ''  # before the cards: it marks findings
+    r3, r3nav = round3_section(extra['round3'].split(',')) if 'round3' in extra else ('', '')
+    gtnav = (('<div><div class="g">Key findings</div><ul><li><a href="#key-findings">Read these first</a></li></ul></div>' if hl else '')
+             + ''.join(f'<div><div class="g">{E(g)}</div><ul>' + ''.join(f'<li><a href="#{E(k)}">{E(short_q(d))}</a></li>' for k, d in items if d['_group'] == g) + '</ul></div>' for g in groups))
+    exp = [(k, t) for k, t in (('exp-compare', 'Harness vs DocETL (E22)'), ('exp-eval', '5-question eval (E21)'), ('exp-log', 'Experiment log (all entries)')) if k.split('-')[1] in extra]
+    expnav = '<div><ul>' + ''.join(f'<li><a href="#{k}">{t}</a></li>' for k, t in exp) + '</ul></div>'
     rows = ''.join(f'<tr><td><a href="#{E(k)}">{E(k)}</a></td><td>{E(short_q(d, 150))}</td><td>{E(first_sentence(d.get("answer")))}</td>'
                    f'<td class="st">{sum(bool(c.get("quote_ok")) for f in d.get("findings") or [] for c in f.get("citations") or [])} / '
-                   f'{sum(len(f.get("citations") or []) for f in d.get("findings") or [])}</td><td>{E(((d.get("confidence") or "").replace(":", " ").replace(",", " ").split() or [""])[0])}</td></tr>'
-                   for k, d in items)
+                   f'{sum(len(f.get("citations") or []) for f in d.get("findings") or [])}</td></tr>' for k, d in items)
+    tabs = [t for t in (('r3', 'Deception · calling out · leadership', r3nav and f'<div><ul>{r3nav}</ul></div>'), ('gt', f'Ground truth ({len(items)} questions)', gtnav),
+                        ('exp', 'Experiments', exp and expnav)) if t[2]]
     page = f'''<title>Village Ground Truth Review</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap">
 <style>{CSS}</style>
+<header class="top"><div class="eyebrow">AI Village · “Perform novel research!” · 11–15 May 2026 · 15 agents</div><h1>Village Ground Truth Review</h1>
+  <div class="tabs" role="tablist">{"".join(f'<button role="tab" data-tab="{t}" aria-selected="{str(n == 0).lower()}">{E(label)}</button>' for n, (t, label, _) in enumerate(tabs))}</div></header>
 <div class="wrap">
-<nav aria-label="Questions">{nav}</nav>
+<nav aria-label="Contents">{"".join(f'<div class="navpane" data-tab="{t}">{nv}</div>' for t, _, nv in tabs)}</nav>
 <main>
-  <header class="intro">
-    <div class="eyebrow">AI Village · “Perform novel research!” · 11–15 May 2026 · 15 agents</div>
-    <h1>Village Ground Truth Review</h1>
-    {'<p>The experiments come first: our harness against DocETL on these questions, the eval run, and the full experiment log (bottom of the page).</p>' if extra else ''}
-    <p>{len(items)} questions answered from the raw records, for your review. Every finding cites the record it rests on with an exact quote, and code checked each quote against the database: {ok} of {len(total)} were found in the cited record. Open any ref with <code>village show REF</code>.</p>
-    <div class="legend"><span><span class="pill truth">ground truth</span> recorded by the system: commands, outputs, errors, events</span>
-      <span><span class="pill claim">claim</span> an agent's own words: chat, reasoning, intent, memory</span>
-      <span><span class="pill interp">interpretation</span> the investigator's reading of the records</span></div>
-    <div class="controls"><button class="btn" id="b-open" aria-pressed="false">Open all citations</button>
-      <button class="btn" id="b-bad" aria-pressed="false">Show only findings with an unverified quote</button></div>
-  </header>
-  <section class="summary scroll"><table><thead><tr><th>Id</th><th>Question</th><th>Answer in one line</th><th>Quotes found</th><th>Confidence</th></tr></thead><tbody>{rows}</tbody></table></section>
-  {hl}
-  {compare_section(extra['compare']) if 'compare' in extra else ''}
-  {eval_section(extra['eval']) if 'eval' in extra else ''}
-  {incidents(items)}
-  {"".join(card(k, d) for k, d in items)}
-  {log_section(extra['log']) if 'log' in extra else ''}
+  <section class="pane" data-tab="r3">{r3}</section>
+  <section class="pane" data-tab="gt">
+    <div class="legend"><span><span class="pill truth">ground truth</span> recorded by the system</span><span><span class="pill claim">claim</span> an agent's own words</span>
+      <span><span class="pill interp">interpretation</span> the investigator's reading</span><span>{ok} of {len(total)} quotes found in their records by code</span></div>
+    {hl}
+    <section class="summary scroll"><table><thead><tr><th>Id</th><th>Question</th><th>Answer in one line</th><th>Quotes found</th></tr></thead><tbody>{rows}</tbody></table></section>
+    {incidents(items)}
+    {"".join(card(k, d) for k, d in items)}
+  </section>
+  <section class="pane" data-tab="exp">
+    {compare_section(extra['compare']) if 'compare' in extra else ''}
+    {eval_section(extra['eval']) if 'eval' in extra else ''}
+    {log_section(extra['log']) if 'log' in extra else ''}
+  </section>
 </main></div>
-<script>{JS}</script>'''
+<script>document.body.dataset.tab = '{tabs[0][0] if tabs else "gt"}';{JS}</script>'''
     Path(out).write_text(page)
     print(f'{out}: {len(items)} questions, {ok} of {len(total)} citations verified, {len(page):,} bytes')
 
