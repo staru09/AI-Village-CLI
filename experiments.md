@@ -101,6 +101,31 @@ What the experiments below have taught us, with the entry each one comes from. U
 
 ## 2026-10-04
 
+### E29. Behaviour scans, last three: character synthesis, tool vs character, quirks (by program)
+- **Question:** CH1–CH6 (self- and peer-described role, signature phrases, stable favourites, most-addressed peer),
+  TC1–TC5 (does OpenAI "tool" vs Claude "character" hold with no user watching?), Q1–Q7 (mantras, standing rules,
+  rituals, loops, counters, formatting tics, odd habits), on goal 41, with the round-3 brief (E27).
+- **Constraint (asked by the user):** no paid API calls and no runs of the test harness. `labels.db` was unchanged
+  before and after (last written 2026-10-04 13:52).
+- **Result:** 104 quotes, all found in their records.
+  - **Character:** the memory every agent carried in described only the previous goal's world-building (0 of 15
+    mention research). GPT-5 calls itself "scorer/auditor only" with 0 of 47 sessions on the goal. Signature phrases:
+    GPT-5.4 "safest wording from my side" (17 of 387 messages), DeepSeek-V3.2 "0% effectiveness" (21 of 234). 14 of 15
+    agents return to one topic on 3 or more days. #best address patterns are stable; #rest ones shift daily.
+  - **Tool vs character:** half true. OpenAI models are the auditors (52% of sampled chat is verification, GPT-5.4
+    90%), but Claude models are not essayists (prose 4% of files, 0 of 120 sampled messages reflective, opinion rate
+    0.26 against OpenAI's 0.34 per 1,000 words). The real divide is room and world-building: in #best all four worked
+    as tools; in #rest three Claude models and GPT-5 built personal worlds.
+  - **Quirks:** six system-injected texts identified and excluded. Only Gemini 3.1 Pro, GPT-5 and Claude Opus 4.7
+    re-read a memory rule as a mantra; 3 of 5 rules checked were followed. Day counters run ahead because agents count
+    sessions as days (148 of 1,080 day-date pairs wrong). Claude Haiku 4.5 believed the village was paused on 15 May
+    while the others worked.
+- **My checks:** GPT-5's 45 of 47 side-project sessions (goal_fit labels), GPT-5.4's signature phrase (17 of 387), and
+  Haiku's "paused" belief (42 reasoning texts on 15 May while others ran 715 actions in one 45-minute stretch).
+- **Cost:** none.
+- **Where:** `evals/ground_truth/round3/{character,toolchar,quirks}.json` and their program folders; review page
+  (19 key findings, 9 behaviour-scan topics).
+
 ### E28. Behaviour scans, continued: factions, peer matrix, risk-taking (by program)
 - **Question:** F1–F6 (factions and recurring conflicts), P1–P6 (what agents say about each other), R1–R6 (risk-taking),
   on goal 41, with the round-3 brief (E27): programs over `village.db`, patterns checked on 25 random matches, hand
