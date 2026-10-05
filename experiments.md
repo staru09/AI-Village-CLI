@@ -101,6 +101,37 @@ What the experiments below have taught us, with the entry each one comes from. U
 
 ## 2026-10-04
 
+### E27. Round 3 of ground truth: deception, calling out, leadership, by program
+- **Question:** 21 questions on goal 41 (D1–D7 deception, W1–W7 calling out, L1–L7 leadership).
+- **Run:** three investigators (Claude Code subagents) in parallel, with the brief `evals/ground_truth/round3/BRIEF.md`:
+  answer each question with a Python program over `village.db`; check every pattern on 25 random matches (seed 41)
+  and, below 80% correct, read all matches by hand instead; cite every finding with a ref and an exact quote. The
+  programs are in `evals/ground_truth/round3/{deception,callouts,leadership}/`.
+- **Result:** 155 quotes, all found in their records by `check_citations.py`.
+  - **Deception:** only Gemini 3.1 Pro wrote down plans to fake data (3 incidents among 428 matches, all read). 3 of
+    471 "done/pushed" claims (0.6%) are contradicted by the agent's own commands. 16% of announced numbers have no
+    output behind them, mostly arithmetic. 5 data writes were presented as real (Gemini 3.1 Pro 2, Claude Haiku 4.5 2,
+    GPT-5.1 1). 6 trace-removal commands in 4 episodes (Gemini 3.1 Pro 3, DeepSeek-V3.2 1).
+  - **Calling out:** GPT-5.4 sends 98 of 324 challenges. 29 of 57 verified incidents were raised, in a median 2.4 min;
+    26 were never raised. Nobody took a concern about a peer to humans. 18 of 31 responses conceded, in a median
+    0.9 min.
+  - **Leadership:** only Claude Opus 4.7 assigns more than it receives (+8), in #best on 11–14 May. In #rest the top
+    assigner changes every day. Approvals and accepted corrections go to the checkers (GPT-5.4, GPT-5.5). Of 198 real
+    task links, 86 (43%) were done after the message and 84 (42%) were already under way.
+- **Patterns that failed their check** and were replaced by hand counts: deception phrases 1 of 25, plan-adoption
+  pairing 7 of 15, task-done keywords 4 of 25, challenge phrases 14 of 25, the response classifier 9 of 25.
+- **My checks:** the task-assignment numbers match my own recount (Opus 4.7 16 sent and 8 received, DeepSeek-V3.2
+  19 sent, 110 in all). Gemini 3.1 Pro's run, amend and delete at 13:53 on 13 May were confirmed in the commands.
+  Calling out's W7 counts a task link to every room-mate named in a message, so its columns were relabelled to stop
+  them reading as a contradiction of L1.
+- **Found on the way: labels nobody asked for.** `labels.db` holds `callout` labels on 2,146 messages and
+  `over_report` labels on 1,009 sessions (Claude Haiku 4.5), made on 2026-10-04 between 13:35 and 13:52 UTC, just after
+  round 2 (E20) was stopped. A round-2 investigator evidently left a paid labelling run going in the background,
+  against its brief. Cost not recorded; estimated $10–15 from E19's rate. W1 used the `callout` labels after checking
+  them (21 of 25 right).
+- **Cost:** no API calls in this round (subagents only).
+- **Where:** `evals/ground_truth/round3/*.json` (git-ignored), review page tab "Deception · calling out · leadership".
+
 ### E26. Write-up and the questions file
 - `writeup.md`: how the ground truth was made, the three approaches (our harness, DocETL, RLM), charts of the E22
   comparison and costs, and the limitations.
