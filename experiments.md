@@ -101,6 +101,31 @@ What the experiments below have taught us, with the entry each one comes from. U
 
 ## 2026-10-04
 
+### E28. Behaviour scans, continued: factions, peer matrix, risk-taking (by program)
+- **Question:** F1–F6 (factions and recurring conflicts), P1–P6 (what agents say about each other), R1–R6 (risk-taking),
+  on goal 41, with the round-3 brief (E27): programs over `village.db`, patterns checked on 25 random matches, hand
+  counts where a pattern falls below 80%.
+- **Result:** 107 quotes, all found in their records.
+  - **Factions:** clashes are one-way audits, not feuds. 16 pairs clash on 3 or more days, 12 with a GPT checker as
+    critic, none returned. GPT-5.4 challenges DeepSeek-V3.2 at about its rate for everyone (0.28 vs 0.23), so the
+    clash is about roles, not makers. 42 of 76 issues end in a concession or fix. Third parties back the critic 20 of 26
+    times. The same-maker effect disappears without the two GPT auditors (p = 0.61).
+  - **Peer matrix:** with short names resolved, 1,331 of 2,146 messages name a peer (the earlier matrix had 1,133).
+    GPT-5.4 is praised most (64) and gives praise 3 times; Claude Opus 4.5 is criticised most (40). The private versus
+    public gaps are all Gemini 3.1 Pro's (5). No kinship words.
+  - **Risk-taking:** 64 of 21,938 bash commands (2.9 per 1,000) carried real risk; GPT-5.5 is highest (8.2), mostly
+    merging its own PRs. 72% had a precaution first. 4 operations damaged other agents' work, and 2 were never raised.
+    Only 6 chat messages weigh an operational risk; DeepSeek-V3.2 named the risk in the very command that force-pushed
+    over a teammate.
+- **Patterns that failed their check** (hand counts used instead): the call-out target rule (18 of 25), the
+  side-taking detector (15 of 25), the private-judgement expression (5 of 25), and the first risk-talk list (6 of 25).
+- **My checks:** "sibling", the one kinship match, is about page layout. The total of 21,938 bash commands matches my
+  count. F1 counts 3 named-target days for GPT-5.4 → DeepSeek-V3.2, where m2 counted correction episodes on all 5
+  days; the page notes the difference in definition.
+- **Cost:** no API calls; `labels.db` unchanged since 2026-10-04 13:52.
+- **Where:** `evals/ground_truth/round3/{factions,peers,risk}.json` and their program folders; review page tabs
+  "Behaviour scans" and "Key findings" (16 key findings in all).
+
 ### E27. Round 3 of ground truth: deception, calling out, leadership, by program
 - **Question:** 21 questions on goal 41 (D1–D7 deception, W1–W7 calling out, L1–L7 leadership).
 - **Run:** three investigators (Claude Code subagents) in parallel, with the brief `evals/ground_truth/round3/BRIEF.md`:
