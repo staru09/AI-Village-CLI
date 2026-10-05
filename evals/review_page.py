@@ -203,7 +203,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .summary td:first-child { white-space: nowrap; }
 .keybox { border: 2px solid #c99a00; }
 .copybox { display: grid; gap: 8px; padding: 12px 14px; background: var(--accent-soft); border-radius: 8px; } .copybox p { max-width: 82ch; } .copybox .btn { justify-self: start; }
-.keybox .hl { display: grid; gap: 8px; } .keybox .hl > p { color: var(--muted); max-width: 82ch; }
+.keybox .hl { display: grid; gap: 8px; scroll-margin-top: 16px; } .keybox .hl + .hl { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 8px; } .keybox .hl > p { color: var(--muted); max-width: 82ch; }
 .keybox ol { margin: 0; padding-left: 1.4em; display: grid; gap: 12px; } .keybox ol ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
 .keybox a.claim { color: var(--fg); font-weight: 500; }
 .pill.keyf { color: #6b4e00; background: #fbe7a1; }
@@ -217,7 +217,7 @@ header.top { max-width: 1240px; margin: 0 auto; padding: 24px 20px 0; display: g
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--line); }
 .tabs [role=tab] { font: 500 14px/1 var(--body); padding: 10px 14px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; background: none; color: var(--muted); cursor: pointer; }
 .tabs [role=tab][aria-selected=true] { background: var(--card); color: var(--fg); border-color: var(--line); margin-bottom: -1px; }
-.pane, .navpane { display: none; } body[data-tab=r3] [data-tab=r3], body[data-tab=gt] [data-tab=gt], body[data-tab=exp] [data-tab=exp] { display: grid; gap: 22px; }
+.pane, .navpane { display: none; } body[data-tab=key] [data-tab=key], body[data-tab=r3] [data-tab=r3], body[data-tab=gt] [data-tab=gt], body[data-tab=exp] [data-tab=exp] { display: grid; gap: 22px; }
 body[data-tab] .navpane[data-tab] { gap: 14px; }
 nav li.sub a { padding-left: 10px; color: var(--muted); font-size: 12.5px; }
 .card.r3 { gap: 0; } .card.r3 .lede { margin: 6px 0 10px; max-width: 82ch; }
@@ -353,9 +353,14 @@ def log_section(path):
             f'<details class="block" open><summary>Learnings so far</summary>{md(learn)}</details>{blocks}</article>')
 
 
-def highlights_section(path, items):
-    """A few findings worth reading first: [{title, why, findings: ["file-N", ...]}], each linking to its card."""
+def highlights_section(path, items, r3paths=()):
+    """A few findings worth reading first: [{title, why, findings: ["file-N" | "r3-<file>-<Q>-<n>", ...]}], each linking to its card."""
     data = {k: d for k, d in items}
+    for rp in r3paths:  # round-3 findings, numbered per question as round3_section numbers them
+        n = {}
+        for f in json.loads(Path(rp).read_text()).get('findings') or []:
+            n[f.get('q')] = n.get(f.get('q'), 0) + 1
+            data[f'r3-{Path(rp).stem}-{f.get("q")}-{n[f.get("q")]}'] = {'findings': [f]}
     out = ''
     for h in json.loads(Path(path).read_text()):
         if 'summary' in h:  # one paragraph to copy into a post or an email
@@ -365,11 +370,13 @@ def highlights_section(path, items):
         rows = ''
         for fid in h['findings']:
             key, n = fid.rsplit('-', 1)
-            f = data[key]['findings'][int(n) - 1]
+            f = data[fid]['findings'][0] if fid in data else data[key]['findings'][int(n) - 1]
+            label = (f'{key.split("-")[1]}, {key.split("-")[2]}' if fid.startswith('r3-') else f'{key}, finding {n}')
             STAR.add(fid)
-            rows += (f'<li><a class="claim" href="#{E(fid)}">{E(f["claim"])}</a> <span class="field">({E(key)}, finding {E(n)})</span>'
-                     f'<ul>{"".join(citation(c) for c in f.get("citations") or [])}</ul></li>')
-        out += f'<div class="hl"><h3>{E(h["title"])}</h3><p>{E(h["why"])}</p><ol>{rows}</ol></div>'
+            rows += (f'<li><a class="claim" href="#{E(fid)}">{E(f["claim"])}</a> <span class="field">({E(label)})</span>'
+                     + (lambda cs: f'<details class="cites"><summary>{len(cs)} quote{"s" if len(cs) != 1 else ""} · {"all found in their records" if all(c.get("quote_ok") for c in cs) else "NOT all found"}</summary><ul>{"".join(citation(c) for c in cs)}</ul></details>')(f.get("citations") or [])
+                     + '</li>')
+        out += f'<div class="hl" id="key-{len(re.findall("class=.hl. id", out))}"><h3>{E(h["title"])}</h3><p>{E(h["why"])}</p><ol>{rows}</ol></div>'
     return f'<article class="card keybox" id="key-findings"><header><div class="eyebrow">Key findings</div><h2>Read these first</h2></header>{out}</article>'
 
 
@@ -459,16 +466,17 @@ def main():
     groups = list(dict.fromkeys(d['_group'] for _, d in items))
     total = [c for _, d in items for f in d.get('findings') or [] for c in f.get('citations') or []]
     ok = sum(bool(c.get('quote_ok')) for c in total)
-    hl = highlights_section(extra['highlights'], items) if 'highlights' in extra else ''  # before the cards: it marks findings
+    hl = highlights_section(extra['highlights'], items, extra['round3'].split(',') if 'round3' in extra else ()) if 'highlights' in extra else ''  # first: it marks findings
     r3, r3nav = round3_section(extra['round3'].split(',')) if 'round3' in extra else ('', '')
-    gtnav = (('<div><div class="g">Key findings</div><ul><li><a href="#key-findings">Read these first</a></li></ul></div>' if hl else '')
+    keynav = '<div><ul>' + ''.join(f'<li><a href="#key-{i}">{t}</a></li>' for i, t in enumerate(re.findall(r'<div class="hl" id="key-\d+"><h3>(.*?)</h3>', hl))) + '</ul></div>'
+    gtnav = (''
              + ''.join(f'<div><div class="g">{E(g)}</div><ul>' + ''.join(f'<li><a href="#{E(k)}">{E(short_q(d))}</a></li>' for k, d in items if d['_group'] == g) + '</ul></div>' for g in groups))
     exp = [(k, t) for k, t in (('exp-compare', 'Harness vs DocETL (E22)'), ('exp-eval', '5-question eval (E21)'), ('exp-log', 'Experiment log (all entries)')) if k.split('-')[1] in extra]
     expnav = '<div><ul>' + ''.join(f'<li><a href="#{k}">{t}</a></li>' for k, t in exp) + '</ul></div>'
     rows = ''.join(f'<tr><td><a href="#{E(k)}">{E(k)}</a></td><td>{E(short_q(d, 150))}</td><td>{E(first_sentence(d.get("answer")))}</td>'
                    f'<td class="st">{sum(bool(c.get("quote_ok")) for f in d.get("findings") or [] for c in f.get("citations") or [])} / '
                    f'{sum(len(f.get("citations") or []) for f in d.get("findings") or [])}</td></tr>' for k, d in items)
-    tabs = [t for t in (('r3', 'Deception · calling out · leadership', r3nav and f'<div><ul>{r3nav}</ul></div>'), ('gt', f'Ground truth ({len(items)} questions)', gtnav),
+    tabs = [t for t in (('key', 'Key findings', hl and keynav), ('r3', 'Deception · calling out · leadership', r3nav and f'<div><ul>{r3nav}</ul></div>'), ('gt', f'Ground truth ({len(items)} questions)', gtnav),
                         ('exp', 'Experiments', exp and expnav)) if t[2]]
     page = f'''<title>Village Ground Truth Review</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -479,11 +487,11 @@ def main():
 <div class="wrap">
 <nav aria-label="Contents">{"".join(f'<div class="navpane" data-tab="{t}">{nv}</div>' for t, _, nv in tabs)}</nav>
 <main>
+  <section class="pane" data-tab="key">{hl}</section>
   <section class="pane" data-tab="r3">{r3}</section>
   <section class="pane" data-tab="gt">
     <div class="legend"><span><span class="pill truth">ground truth</span> recorded by the system</span><span><span class="pill claim">claim</span> an agent's own words</span>
       <span><span class="pill interp">interpretation</span> the investigator's reading</span><span>{ok} of {len(total)} quotes found in their records by code</span></div>
-    {hl}
     <section class="summary scroll"><table><thead><tr><th>Id</th><th>Question</th><th>Answer in one line</th><th>Quotes found</th></tr></thead><tbody>{rows}</tbody></table></section>
     {incidents(items)}
     {"".join(card(k, d) for k, d in items)}
